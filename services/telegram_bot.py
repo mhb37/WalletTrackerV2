@@ -111,12 +111,26 @@ async def handle_command(command: str, chat_id: str) -> None:
             from services.scoring import run_scoring_cycle
             results = await run_scoring_cycle()
             passed = [r for r in results if r.get("passed")]
-            await send_message(
-                f"✅ Scoring terminé\n"
-                f"Wallets traités: {len(results)}\n"
+
+            tally = {}
+            for r in results:
+                if r.get("passed"):
+                    continue
+                for reason in r.get("reasons", []):
+                    category = reason.split(" ")[0]
+                    tally[category] = tally.get(category, 0) + 1
+
+            lines = [
+                f"✅ Scoring terminé",
+                f"Wallets traités: {len(results)}",
                 f"Wallets qui passent les filtres: {len(passed)}",
-                chat_id,
-            )
+            ]
+            if tally:
+                lines.append("\nRaisons de rejet:")
+                for category, count in sorted(tally.items(), key=lambda x: -x[1]):
+                    lines.append(f"• {category}: {count}")
+
+            await send_message("\n".join(lines), chat_id)
 
         elif normalized.startswith("/top"):
             wallets = (
