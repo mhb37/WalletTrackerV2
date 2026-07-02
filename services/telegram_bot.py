@@ -41,7 +41,30 @@ def _format_wallet_line(w: Wallet) -> str:
 async def handle_command(command: str, chat_id: str) -> None:
     db = SessionLocal()
     try:
-        if command.startswith("/top"):
+        if command.startswith("/discovery"):
+            await send_message("🔍 Discovery en cours...", chat_id)
+            from services.discovery import run_discovery_cycle
+            result = await run_discovery_cycle()
+            await send_message(
+                f"✅ Discovery terminée\n"
+                f"Tokens scannés: {result['tokens_scanned']}\n"
+                f"Nouveaux wallets trouvés: {result['new_wallets_found']}",
+                chat_id,
+            )
+
+        elif command.startswith("/scoring"):
+            await send_message("📊 Scoring en cours...", chat_id)
+            from services.scoring import run_scoring_cycle
+            results = await run_scoring_cycle()
+            passed = [r for r in results if r.get("passed")]
+            await send_message(
+                f"✅ Scoring terminé\n"
+                f"Wallets traités: {len(results)}\n"
+                f"Wallets qui passent les filtres: {len(passed)}",
+                chat_id,
+            )
+
+        elif command.startswith("/top"):
             wallets = (
                 db.query(Wallet)
                 .filter(Wallet.passed_hard_filters == True)  # noqa: E712
@@ -80,7 +103,15 @@ async def handle_command(command: str, chat_id: str) -> None:
                 chat_id,
             )
         else:
-            await send_message("Commandes: /top /watchlist /wallet <adresse>", chat_id)
+            await send_message(
+                "Commandes disponibles:\n"
+                "/discovery — lance un cycle de découverte\n"
+                "/scoring — lance un cycle de scoring\n"
+                "/top — top 10 wallets scorés\n"
+                "/watchlist — wallets actuellement suivis\n"
+                "/wallet <adresse> — détails d'un wallet",
+                chat_id,
+            )
     finally:
         db.close()
 
