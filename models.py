@@ -30,6 +30,7 @@ class Wallet(Base):
     # Résultat du scoring
     score = Column(Float, default=0.0)
     passed_hard_filters = Column(Boolean, default=False)
+    rejection_reason = Column(String, nullable=True)
     is_watchlisted = Column(Boolean, default=False)
 
     transactions = relationship("WalletTransaction", back_populates="wallet")
