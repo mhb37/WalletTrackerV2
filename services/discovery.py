@@ -55,6 +55,14 @@ async def run_discovery_cycle():
                 token = existing
                 token.pump_multiple = pt.get("pump_multiple")
 
+            age_hours = (datetime.now(timezone.utc) - mint_time).total_seconds() / 3600
+            if age_hours > config.MAX_TOKEN_AGE_HOURS_FOR_DISCOVERY:
+                # Trop vieux: remonter jusqu'aux tout premiers acheteurs via pagination
+                # arrière nécessiterait trop d'appels API. On skip ce token.
+                token.used_for_discovery = True
+                db.commit()
+                continue
+
             early_buyers = await helius_client.get_token_early_buyers(
                 token_address=token_address,
                 mint_timestamp=mint_time,
