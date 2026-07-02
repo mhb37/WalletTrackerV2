@@ -107,6 +107,53 @@ class HeliusClient:
 
         return early_buyers
 
+    async def get_wallet_transaction_history(
+        self, address: str, max_pages: int = 5, page_size: int = 100
+    ) -> list[dict]:
+        """
+        Récupère un historique plus large qu'une seule page en paginant en arrière
+        (jusqu'à max_pages x page_size transactions). S'arrête tôt une fois qu'on a
+        clairement dépassé l'ancienneté minimale attendue pour un wallet, histoire de
+        ne pas gaspiller des appels API sur les wallets très actifs qui ont des
+        milliers de transactions.
+        """
+        import asyncio as _asyncio
+
+        all_txs = []
+        before_sig = None
+        now_ts = datetime.now(timezone.utc).timestamp()
+        comfortable_age_seconds = config.MIN_WALLET_AGE_DAYS * 3 * 86400
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            for _ in range(max_pages):
+                params = {"api-key": self.api_key, "limit": page_size}
+                if before_sig:
+                    params["before"] = before_sig
+
+                resp = await client.get(
+                    config.HELIUS_TX_URL.format(address=address), params=params
+                )
+                if resp.status_code != 200:
+                    break
+                txs = resp.json()
+                if not txs:
+                    break
+
+                all_txs.extend(txs)
+                before_sig = txs[-1].get("signature")
+
+                timestamps = [t.get("timestamp") for t in txs if t.get("timestamp") is not None]
+                if not timestamps:
+                    break
+                oldest_ts = min(timestamps)
+
+                if (now_ts - oldest_ts) >= comfortable_age_seconds:
+                    break  # ancienneté largement prouvée, pas la peine de creuser plus loin
+
+                await _asyncio.sleep(0.12)
+
+        return all_txs
+
     async def get_wallet_first_activity(self, address: str) -> datetime | None:
         """Estime l'âge du wallet via sa plus vieille transaction connue (approximation sur les 100 dernières)."""
         txs = await self.get_wallet_transactions(address, limit=100)
