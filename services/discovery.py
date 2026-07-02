@@ -26,7 +26,21 @@ async def run_discovery_cycle():
             if existing and existing.used_for_discovery:
                 continue  # déjà traité
 
-            mint_time = pt.get("created_at") or datetime.now(timezone.utc)
+            mint_time = pt.get("created_at")
+            if mint_time is None:
+                # Pas de date de création fiable -> on ne peut pas déterminer
+                # une fenêtre "early buyers" correcte, on skip ce token.
+                if not existing:
+                    token = Token(
+                        address=token_address,
+                        symbol=pt.get("symbol"),
+                        current_price_usd=pt.get("current_price_usd"),
+                        pump_multiple=pt.get("pump_multiple"),
+                        used_for_discovery=True,
+                    )
+                    db.add(token)
+                    db.commit()
+                continue
 
             if not existing:
                 token = Token(
