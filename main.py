@@ -10,7 +10,7 @@ from database import init_db, get_db
 from models import Wallet
 from services.discovery import run_discovery_cycle
 from services.scoring import run_scoring_cycle
-from services.telegram_bot import poll_updates_once, notify_new_watchlist_wallet, send_message
+from services.telegram_bot import poll_updates_once, notify_new_watchlist_wallet, send_message, set_bot_commands, main_keyboard, HELP_TEXT
 from config import config
 
 logging.basicConfig(level=logging.INFO)
@@ -73,7 +73,8 @@ async def lifespan(app: FastAPI):
     _background_tasks.append(asyncio.create_task(discovery_loop()))
     _background_tasks.append(asyncio.create_task(scoring_loop()))
     _background_tasks.append(asyncio.create_task(telegram_polling_loop()))
-    await send_message("🚀 Wallet Scorer démarré.")
+    await set_bot_commands()
+    await send_message("🚀 Wallet Scorer démarré.\n\n" + HELP_TEXT, reply_markup=main_keyboard())
     yield
     for t in _background_tasks:
         t.cancel()
