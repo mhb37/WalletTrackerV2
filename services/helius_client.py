@@ -23,32 +23,67 @@ class HeliusClient:
             return resp.json()
 
     async def get_token_early_buyers(
-        self, token_address: str, mint_timestamp: datetime, window_minutes: int, max_buyers: int
+        self, token_address: str, mint_timestamp: datetime, window_minutes: int, max_buyers: int,
+        max_pages: int = 15,
     ) -> list[dict]:
         """
         Récupère les premiers acheteurs d'un token dans une fenêtre de temps donnée
         après sa création, via les transactions du token (swaps).
-        Retourne une liste de {wallet, timestamp, sol_amount, tx_signature}.
+
+        Helius renvoie les transactions du plus récent au plus ancien. Si le token
+        existe depuis longtemps, la fenêtre "early" n'est PAS dans les 100 dernières
+        transactions -> il faut paginer en arrière (paramètre "before") jusqu'à
+        atteindre la période de création du token.
+
+        Retourne une liste de {wallet, timestamp, token_amount, tx_signature}.
         """
         url = config.HELIUS_TX_URL.format(address=token_address)
-        params = {"api-key": self.api_key, "limit": 100}
+        mint_ts = mint_timestamp.timestamp()
+        cutoff = mint_ts + (window_minutes * 60)
+
+        matched_txs = []
+        before_sig = None
+        import asyncio as _asyncio
+
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.get(url, params=params)
-            if resp.status_code != 200:
-                return []
-            txs = resp.json()
+            for _ in range(max_pages):
+                params = {"api-key": self.api_key, "limit": 100}
+                if before_sig:
+                    params["before"] = before_sig
+
+                resp = await client.get(url, params=params)
+                if resp.status_code != 200:
+                    break
+                txs = resp.json()
+                if not txs:
+                    break
+
+                page_timestamps = [t.get("timestamp") for t in txs if t.get("timestamp") is not None]
+                if not page_timestamps:
+                    break
+                oldest_ts_in_page = min(page_timestamps)
+
+                for tx in txs:
+                    ts = tx.get("timestamp")
+                    if ts is None:
+                        continue
+                    if mint_ts <= ts <= cutoff and tx.get("type") == "SWAP":
+                        matched_txs.append(tx)
+
+                before_sig = txs[-1].get("signature")
+
+                # on a dépassé la création du token -> stop
+                if oldest_ts_in_page < mint_ts:
+                    break
+                # on a atteint (et dépassé vers le bas) la fenêtre d'early buy -> stop
+                if oldest_ts_in_page <= cutoff:
+                    break
+
+                await _asyncio.sleep(0.15)  # ménage le rate limit Helius free tier
 
         buyers = []
-        cutoff = mint_timestamp.timestamp() + (window_minutes * 60)
-
-        for tx in txs:
+        for tx in matched_txs:
             ts = tx.get("timestamp")
-            if ts is None or ts > cutoff:
-                continue
-            if tx.get("type") not in ("SWAP",):
-                continue
-
-            # Helius renvoie tokenTransfers pour identifier acheteur + montants
             for transfer in tx.get("tokenTransfers", []):
                 if transfer.get("mint") == token_address and transfer.get("toUserAccount"):
                     buyers.append({
