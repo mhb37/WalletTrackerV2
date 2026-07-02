@@ -76,25 +76,34 @@ def _compute_stats_from_flows(flows: dict) -> dict:
     }
 
 
-def _passes_hard_filters(wallet: Wallet, stats: dict, wallet_age_days: float) -> bool:
+def _passes_hard_filters(wallet: Wallet, stats: dict, wallet_age_days: float) -> tuple[bool, list[str]]:
+    reasons = []
+
     if stats["total_trades"] < config.MIN_TOTAL_TRADES:
-        return False
+        reasons.append(
+            f"trades_insuffisants ({stats['total_trades']}<{config.MIN_TOTAL_TRADES})"
+        )
     if wallet_age_days < config.MIN_WALLET_AGE_DAYS:
-        return False
+        reasons.append(
+            f"wallet_trop_jeune ({wallet_age_days:.0f}j<{config.MIN_WALLET_AGE_DAYS}j)"
+        )
     if stats["win_rate"] < config.MIN_WIN_RATE:
-        return False
+        reasons.append(
+            f"win_rate_bas ({stats['win_rate']:.0%}<{config.MIN_WIN_RATE:.0%})"
+        )
     if stats["total_realized_pnl_sol"] <= 0:
-        return False
+        reasons.append(f"pnl_negatif ({stats['total_realized_pnl_sol']:.2f} SOL)")
     if stats["top_trade_pnl_sol"] > 0 and stats["total_realized_pnl_sol"] > 0:
         dominance = stats["top_trade_pnl_sol"] / stats["total_realized_pnl_sol"]
         if dominance > config.MAX_SINGLE_TRADE_PROFIT_DOMINANCE:
-            return False
+            reasons.append(f"trade_dominant ({dominance:.0%} du profit total)")
     last_active = datetime.fromtimestamp(stats["last_active_ts"], tz=timezone.utc) if stats["last_active_ts"] else None
     if last_active:
         inactive_days = (datetime.now(timezone.utc) - last_active).days
         if inactive_days > config.MAX_INACTIVE_DAYS:
-            return False
-    return True
+            reasons.append(f"inactif ({inactive_days}j sans trade)")
+
+    return (len(reasons) == 0, reasons)
 
 
 def _compute_score(stats: dict, avg_entry_percentile: float) -> float:
@@ -132,16 +141,17 @@ async def score_wallet(wallet_address: str, db: Session) -> dict | None:
     stats = _compute_stats_from_flows(flows)
     if not stats:
         wallet.passed_hard_filters = False
+        wallet.rejection_reason = "aucune_position_cloturee (pas encore de vente détectée)"
         wallet.score = 0
         db.commit()
-        return {"address": wallet_address, "passed": False, "reason": "no_closed_positions"}
+        return {"address": wallet_address, "passed": False, "reasons": ["aucune_position_cloturee"]}
 
     avg_entry_percentile = 0.5
     entries = [t.entry_percentile for t in wallet.transactions if t.entry_percentile is not None]
     if entries:
         avg_entry_percentile = sum(entries) / len(entries)
 
-    passed = _passes_hard_filters(wallet, stats, wallet_age_days)
+    passed, reasons = _passes_hard_filters(wallet, stats, wallet_age_days)
 
     wallet.total_trades = stats["total_trades"]
     wallet.win_count = stats["win_count"]
@@ -152,6 +162,7 @@ async def score_wallet(wallet_address: str, db: Session) -> dict | None:
     wallet.top_trade_pnl_sol = stats["top_trade_pnl_sol"]
     wallet.avg_entry_percentile = avg_entry_percentile
     wallet.passed_hard_filters = passed
+    wallet.rejection_reason = "; ".join(reasons) if reasons else None
     wallet.last_active_at = (
         datetime.fromtimestamp(stats["last_active_ts"], tz=timezone.utc)
         if stats["last_active_ts"] else None
@@ -165,7 +176,7 @@ async def score_wallet(wallet_address: str, db: Session) -> dict | None:
         wallet.is_watchlisted = False
 
     db.commit()
-    return {"address": wallet_address, "passed": passed, "score": wallet.score}
+    return {"address": wallet_address, "passed": passed, "score": wallet.score, "reasons": reasons}
 
 
 async def run_scoring_cycle():
