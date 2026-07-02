@@ -27,6 +27,9 @@ class Config:
     MIN_PUMP_MULTIPLE = float(os.getenv("MIN_PUMP_MULTIPLE", "3.0"))  # token doit avoir x3+ depuis le bas
     EARLY_BUYER_WINDOW_MINUTES = int(os.getenv("EARLY_BUYER_WINDOW_MINUTES", "15"))
     MAX_EARLY_BUYERS_PER_TOKEN = int(os.getenv("MAX_EARLY_BUYERS_PER_TOKEN", "30"))
+    # Au-delà de cet âge, remonter jusqu'aux tout premiers acheteurs via pagination
+    # arrière devient irréaliste (trop de transactions à parcourir). On skip.
+    MAX_TOKEN_AGE_HOURS_FOR_DISCOVERY = float(os.getenv("MAX_TOKEN_AGE_HOURS_FOR_DISCOVERY", "6"))
 
     # --- Filtres durs (avant scoring) ---
     MIN_TOTAL_TRADES = int(os.getenv("MIN_TOTAL_TRADES", "8"))
