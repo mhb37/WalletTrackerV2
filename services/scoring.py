@@ -128,13 +128,19 @@ async def score_wallet(wallet_address: str, db: Session) -> dict | None:
     if not wallet:
         return None
 
-    txs = await helius_client.get_wallet_transactions(wallet_address, limit=100)
+    txs = await helius_client.get_wallet_transaction_history(
+        wallet_address, max_pages=config.MAX_HISTORY_PAGES_FOR_SCORING
+    )
     if not txs:
         return None
 
-    first_activity = await helius_client.get_wallet_first_activity(wallet_address)
+    timestamps = [t.get("timestamp") for t in txs if t.get("timestamp") is not None]
+    first_activity = (
+        datetime.fromtimestamp(min(timestamps), tz=timezone.utc) if timestamps else None
+    )
     wallet_age_days = (
-        (datetime.now(timezone.utc) - first_activity).days if first_activity else 0
+        (datetime.now(timezone.utc) - first_activity).total_seconds() / 86400
+        if first_activity else 0
     )
 
     flows = _extract_sol_flows_by_token(txs, wallet_address)
