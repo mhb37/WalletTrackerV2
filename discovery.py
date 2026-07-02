@@ -1,0 +1,84 @@
+"""
+Phase 1 du pipeline: repère des tokens qui ont pump, identifie leurs early buyers,
+et les enregistre comme wallets candidats à scorer.
+"""
+from datetime import datetime, timezone
+from sqlalchemy.orm import Session
+from database import SessionLocal
+from models import Wallet, Token, WalletTransaction
+from services.dexscreener_client import dexscreener_client
+from services.helius_client import helius_client
+from config import config
+
+
+async def run_discovery_cycle():
+    db: Session = SessionLocal()
+    try:
+        pumped_tokens = await dexscreener_client.find_pumped_solana_tokens(
+            config.MIN_PUMP_MULTIPLE
+        )
+        new_wallets_found = 0
+
+        for pt in pumped_tokens:
+            token_address = pt["token_address"]
+
+            existing = db.query(Token).filter(Token.address == token_address).first()
+            if existing and existing.used_for_discovery:
+                continue  # déjà traité
+
+            mint_time = pt.get("created_at") or datetime.now(timezone.utc)
+
+            if not existing:
+                token = Token(
+                    address=token_address,
+                    symbol=pt.get("symbol"),
+                    created_at=mint_time,
+                    current_price_usd=pt.get("current_price_usd"),
+                    pump_multiple=pt.get("pump_multiple"),
+                )
+                db.add(token)
+            else:
+                token = existing
+                token.pump_multiple = pt.get("pump_multiple")
+
+            early_buyers = await helius_client.get_token_early_buyers(
+                token_address=token_address,
+                mint_timestamp=mint_time,
+                window_minutes=config.EARLY_BUYER_WINDOW_MINUTES,
+                max_buyers=config.MAX_EARLY_BUYERS_PER_TOKEN,
+            )
+
+            total = len(early_buyers) or 1
+            for idx, buyer in enumerate(early_buyers):
+                wallet_address = buyer["wallet"]
+
+                wallet = db.query(Wallet).filter(Wallet.address == wallet_address).first()
+                if not wallet:
+                    wallet = Wallet(address=wallet_address, first_seen=datetime.now(timezone.utc))
+                    db.add(wallet)
+                    new_wallets_found += 1
+
+                exists_tx = db.query(WalletTransaction).filter(
+                    WalletTransaction.tx_signature == buyer["tx_signature"]
+                ).first()
+                if exists_tx:
+                    continue
+
+                tx = WalletTransaction(
+                    wallet_address=wallet_address,
+                    token_address=token_address,
+                    action="buy",
+                    token_amount=buyer.get("token_amount", 0),
+                    entry_percentile=idx / total,
+                    tx_signature=buyer["tx_signature"],
+                    timestamp=buyer["timestamp"],
+                )
+                db.add(tx)
+
+            token.used_for_discovery = True
+            db.commit()
+
+        return {"tokens_scanned": len(pumped_tokens), "new_wallets_found": new_wallets_found}
+
+    finally:
+        db.close()
