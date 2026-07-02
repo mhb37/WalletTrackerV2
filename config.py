@@ -37,6 +37,10 @@ class Config:
     MIN_WIN_RATE = float(os.getenv("MIN_WIN_RATE", "0.35"))
     MAX_SINGLE_TRADE_PROFIT_DOMINANCE = float(os.getenv("MAX_SINGLE_TRADE_PROFIT_DOMINANCE", "0.6"))
     MAX_INACTIVE_DAYS = int(os.getenv("MAX_INACTIVE_DAYS", "10"))
+    # Nombre de pages Helius (x100 tx) à parcourir en arrière pour évaluer l'historique
+    # complet d'un wallet lors du scoring (âge réel + PnL). Plus haut = plus précis
+    # mais plus d'appels API par wallet.
+    MAX_HISTORY_PAGES_FOR_SCORING = int(os.getenv("MAX_HISTORY_PAGES_FOR_SCORING", "5"))
 
     # --- Scoring: poids (doivent sommer à 1.0) ---
     WEIGHT_WIN_RATE = 0.30
