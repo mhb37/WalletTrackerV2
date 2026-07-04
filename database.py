@@ -36,6 +36,7 @@ def _run_light_migrations():
     from sqlalchemy import text
     statements = [
         "ALTER TABLE wallets ADD COLUMN IF NOT EXISTS rejection_reason VARCHAR",
+        "ALTER TABLE wallets ADD COLUMN IF NOT EXISTS last_seen_signature VARCHAR",
     ]
     with engine.connect() as conn:
         for stmt in statements:
