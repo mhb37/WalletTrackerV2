@@ -13,6 +13,7 @@ API_BASE = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}"
 COMMANDS_MENU = [
     {"command": "discovery", "description": "Lancer un cycle de découverte"},
     {"command": "scoring", "description": "Lancer un cycle de scoring"},
+    {"command": "monitor", "description": "Vérifier les wallets watchlistés maintenant"},
     {"command": "top", "description": "Top 10 wallets scorés"},
     {"command": "watchlist", "description": "Wallets actuellement suivis"},
     {"command": "help", "description": "Voir toutes les commandes"},
@@ -25,7 +26,7 @@ def main_keyboard() -> dict:
         "keyboard": [
             ["🔍 Discovery", "📊 Scoring"],
             ["🏆 Top wallets", "👀 Watchlist"],
-            ["❓ Aide"],
+            ["📡 Monitor", "❓ Aide"],
         ],
         "resize_keyboard": True,
         "is_persistent": True,
@@ -70,6 +71,7 @@ def _format_wallet_line(w: Wallet) -> str:
 BUTTON_TO_COMMAND = {
     "🔍 discovery": "/discovery",
     "📊 scoring": "/scoring",
+    "📡 monitor": "/monitor",
     "🏆 top wallets": "/top",
     "👀 watchlist": "/watchlist",
     "❓ aide": "/help",
@@ -79,10 +81,13 @@ HELP_TEXT = (
     "🤖 <b>Wallet Scorer — commandes</b>\n\n"
     "🔍 /discovery — lance un cycle de découverte de nouveaux wallets\n"
     "📊 /scoring — recalcule le score de tous les wallets suivis\n"
+    "📡 /monitor — vérifie les wallets watchlistés maintenant (nouveaux achats)\n"
     "🏆 /top — top 10 wallets scorés\n"
     "👀 /watchlist — wallets actuellement suivis (score ≥ seuil)\n"
     "📍 /wallet &lt;adresse&gt; — détails d'un wallet précis\n\n"
-    "Utilise les boutons en bas de l'écran, ou tape les commandes directement."
+    "Utilise les boutons en bas de l'écran, ou tape les commandes directement.\n\n"
+    "📡 Le monitoring tourne aussi automatiquement en fond: dès qu'un wallet "
+    "watchlisté fait un nouvel achat, tu reçois une alerte sans rien faire."
 )
 
 
@@ -131,6 +136,17 @@ async def handle_command(command: str, chat_id: str) -> None:
                     lines.append(f"• {category}: {count}")
 
             await send_message("\n".join(lines), chat_id)
+
+        elif normalized.startswith("/monitor"):
+            await send_message("📡 Vérification des wallets watchlistés...", chat_id)
+            from services.monitor import run_monitor_cycle
+            result = await run_monitor_cycle()
+            await send_message(
+                f"✅ Monitoring terminé\n"
+                f"Wallets vérifiés: {result['wallets_checked']}\n"
+                f"Alertes envoyées: {result['alerts_sent']}",
+                chat_id,
+            )
 
         elif normalized.startswith("/top"):
             wallets = (
