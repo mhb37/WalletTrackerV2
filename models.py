@@ -32,6 +32,7 @@ class Wallet(Base):
     passed_hard_filters = Column(Boolean, default=False)
     rejection_reason = Column(String, nullable=True)
     is_watchlisted = Column(Boolean, default=False)
+    last_seen_signature = Column(String, nullable=True)  # curseur pour le tracking temps réel
 
     transactions = relationship("WalletTransaction", back_populates="wallet")
 
