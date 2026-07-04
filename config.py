@@ -49,6 +49,10 @@ class Config:
     WEIGHT_RUG_AVOIDANCE = 0.15
     WEIGHT_TIMING = 0.15
 
+    # --- Détection de rugs (Phase 2) ---
+    RUG_LIQUIDITY_THRESHOLD_USD = float(os.getenv("RUG_LIQUIDITY_THRESHOLD_USD", "500"))
+    MAX_TOKENS_TO_CHECK_FOR_RUGS = int(os.getenv("MAX_TOKENS_TO_CHECK_FOR_RUGS", "15"))
+
     # --- Watchlist ---
     SCORE_THRESHOLD_WATCHLIST = float(os.getenv("SCORE_THRESHOLD_WATCHLIST", "70"))
 
