@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from database import SessionLocal
 from models import Wallet
 from services.helius_client import helius_client
+from services.rug_detector import compute_rug_stats
 from config import config
 
 
@@ -106,11 +107,12 @@ def _passes_hard_filters(wallet: Wallet, stats: dict, wallet_age_days: float) ->
     return (len(reasons) == 0, reasons)
 
 
-def _compute_score(stats: dict, avg_entry_percentile: float) -> float:
+def _compute_score(stats: dict, avg_entry_percentile: float, rug_ratio: float | None) -> float:
     win_rate_score = min(stats["win_rate"] / 0.8, 1.0) * 100
     roi_score = min(stats["avg_roi_multiple"] / 5.0, 1.0) * 100
     consistency_score = min(stats["total_trades"] / 30.0, 1.0) * 100
-    rug_avoidance_score = 100  # placeholder: affiné en Phase 2 avec détection de rugs
+    # Si on n'a pas pu vérifier (pas de données DexScreener), on ne pénalise pas.
+    rug_avoidance_score = 100 if rug_ratio is None else max(0.0, 100 - rug_ratio * 100)
     timing_score = max(0.0, (1 - avg_entry_percentile)) * 100
 
     score = (
@@ -175,7 +177,14 @@ async def score_wallet(wallet_address: str, db: Session) -> dict | None:
     )
 
     if passed:
-        wallet.score = _compute_score(stats, avg_entry_percentile)
+        unique_tokens = list(flows.keys())
+        rug_stats = await compute_rug_stats(unique_tokens)
+        rug_ratio = (
+            rug_stats["rug_count"] / rug_stats["checked_count"]
+            if rug_stats["checked_count"] > 0 else None
+        )
+        wallet.rug_hits = rug_stats["rug_count"]
+        wallet.score = _compute_score(stats, avg_entry_percentile, rug_ratio)
         wallet.is_watchlisted = wallet.score >= config.SCORE_THRESHOLD_WATCHLIST
     else:
         wallet.score = 0
