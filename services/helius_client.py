@@ -2,9 +2,12 @@
 Client pour l'API Helius (transactions parsées + RPC).
 Doc: https://docs.helius.dev/
 """
+import logging
 import httpx
 from datetime import datetime, timezone
 from config import config
+
+logger = logging.getLogger("wallet-scorer")
 
 
 class HeliusClient:
@@ -40,46 +43,69 @@ class HeliusClient:
         url = config.HELIUS_TX_URL.format(address=token_address)
         mint_ts = mint_timestamp.timestamp()
         cutoff = mint_ts + (window_minutes * 60)
+        age_hours = (datetime.now(timezone.utc).timestamp() - mint_ts) / 3600
+        logger.info(
+            f"[early_buyers] {token_address[:8]}...: mint_time={mint_timestamp.isoformat()}, "
+            f"age_h={age_hours:.1f}, fenetre_min={window_minutes}"
+        )
 
         matched_txs = []
         before_sig = None
         import asyncio as _asyncio
 
+        stop_reason = "max_pages_reached"
+        swap_type_seen = set()
+
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            for _ in range(max_pages):
+            for page_num in range(max_pages):
                 params = {"api-key": self.api_key, "limit": 100}
                 if before_sig:
                     params["before"] = before_sig
 
                 resp = await client.get(url, params=params)
                 if resp.status_code != 200:
+                    stop_reason = f"http_error_{resp.status_code}"
+                    logger.warning(
+                        f"[early_buyers] {token_address[:8]}... page {page_num}: "
+                        f"HTTP {resp.status_code}, arrêt"
+                    )
                     break
                 txs = resp.json()
                 if not txs:
+                    stop_reason = "empty_page"
                     break
 
                 page_timestamps = [t.get("timestamp") for t in txs if t.get("timestamp") is not None]
                 if not page_timestamps:
+                    stop_reason = "no_timestamps"
                     break
                 oldest_ts_in_page = min(page_timestamps)
 
                 for tx in txs:
+                    tx_type = tx.get("type")
+                    if tx_type:
+                        swap_type_seen.add(tx_type)
                     ts = tx.get("timestamp")
                     if ts is None:
                         continue
-                    if mint_ts <= ts <= cutoff and tx.get("type") == "SWAP":
+                    if mint_ts <= ts <= cutoff and tx_type == "SWAP":
                         matched_txs.append(tx)
 
                 before_sig = txs[-1].get("signature")
 
-                # on a dépassé la création du token -> stop
                 if oldest_ts_in_page < mint_ts:
+                    stop_reason = "passed_mint_time"
                     break
-                # on a atteint (et dépassé vers le bas) la fenêtre d'early buy -> stop
                 if oldest_ts_in_page <= cutoff:
+                    stop_reason = "reached_window"
                     break
 
                 await _asyncio.sleep(0.15)  # ménage le rate limit Helius free tier
+
+        logger.info(
+            f"[early_buyers] {token_address[:8]}...: raison_arret={stop_reason}, "
+            f"tx_matchees={len(matched_txs)}, types_vus={list(swap_type_seen)[:5]}"
+        )
 
         buyers = []
         for tx in matched_txs:
