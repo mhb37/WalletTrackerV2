@@ -2,6 +2,7 @@
 Phase 1 du pipeline: repère des tokens qui ont pump, identifie leurs early buyers,
 et les enregistre comme wallets candidats à scorer.
 """
+import asyncio
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from database import SessionLocal
@@ -99,6 +100,8 @@ async def run_discovery_cycle():
 
             token.used_for_discovery = True
             db.commit()
+
+            await asyncio.sleep(0.5)  # ménage le rate limit Helius entre chaque token
 
         return {"tokens_scanned": len(pumped_tokens), "new_wallets_found": new_wallets_found}
 
