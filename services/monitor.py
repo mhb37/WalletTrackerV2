@@ -7,6 +7,7 @@ from models import Wallet
 from services.helius_client import helius_client
 from services.dexscreener_client import dexscreener_client
 from services.telegram_bot import send_message
+from services.paper_trading import create_pending_signal
 from config import config
 
 LAMPORTS_PER_SOL = 1_000_000_000
@@ -36,7 +37,7 @@ def _extract_buys(txs: list[dict], wallet_address: str) -> list[dict]:
     return buys
 
 
-async def _build_alert_text(wallet: Wallet, buy: dict) -> str:
+async def _build_alert_text(wallet: Wallet, buy: dict) -> tuple[str, float | None]:
     token_address = buy["token_address"]
     pairs = await dexscreener_client.get_token_pairs(token_address)
 
@@ -46,7 +47,7 @@ async def _build_alert_text(wallet: Wallet, buy: dict) -> str:
     if pairs:
         best = max(pairs, key=lambda p: (p.get("liquidity") or {}).get("usd", 0))
         symbol = best.get("baseToken", {}).get("symbol", "?")
-        price_usd = best.get("priceUsd")
+        price_usd = float(best.get("priceUsd", 0) or 0) or None
         liquidity_usd = (best.get("liquidity") or {}).get("usd")
 
     lines = [
@@ -61,8 +62,9 @@ async def _build_alert_text(wallet: Wallet, buy: dict) -> str:
         lines.append(f"Liquidité: ${liquidity_usd:,.0f}")
         if liquidity_usd < config.RUG_LIQUIDITY_THRESHOLD_USD:
             lines.append("⚠️ Liquidité très faible, prudence.")
+    lines.append("📡 Signal mis en observation pour un point d'entrée (paper trading).")
 
-    return "\n".join(lines)
+    return "\n".join(lines), price_usd
 
 
 async def run_monitor_cycle() -> dict:
@@ -93,9 +95,11 @@ async def run_monitor_cycle() -> dict:
             new_buys = _extract_buys(relevant_txs, wallet.address)
 
             for buy in new_buys:
-                text = await _build_alert_text(wallet, buy)
+                text, price_usd = await _build_alert_text(wallet, buy)
                 await send_message(text)
                 alerts_sent += 1
+                if price_usd is not None:
+                    await create_pending_signal(wallet.address, buy["token_address"], price_usd)
 
             wallet.last_seen_signature = newest_signature
             db.commit()
