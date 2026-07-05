@@ -77,3 +77,55 @@ class WatchlistAlert(Base):
     token_address = Column(String, nullable=False)
     action = Column(String, nullable=False)
     sent_at = Column(DateTime, default=utcnow)
+
+
+class PendingSignal(Base):
+    """Un achat détecté chez un wallet watchlisté, en attente d'un bon point d'entrée."""
+    __tablename__ = "pending_signals"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    wallet_address = Column(String, nullable=False)
+    token_address = Column(String, nullable=False)
+    signal_price_usd = Column(Float, nullable=False)
+    peak_price_usd = Column(Float, nullable=False)  # pic observé depuis le signal
+    created_at = Column(DateTime, default=utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    status = Column(String, default="pending")  # pending | entered | expired | rejected
+
+
+class PaperPosition(Base):
+    """Une position simulée (paper trading) ouverte suite à un signal validé."""
+    __tablename__ = "paper_positions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    wallet_address = Column(String, nullable=False)  # wallet source du signal
+    token_address = Column(String, nullable=False)
+    symbol = Column(String, nullable=True)
+
+    entry_price_usd = Column(Float, nullable=False)
+    entry_time = Column(DateTime, default=utcnow)
+    initial_size_usd = Column(Float, nullable=False)
+
+    remaining_fraction = Column(Float, default=1.0)  # part de la position pas encore vendue
+    peak_price_usd = Column(Float, nullable=False)  # pour le trailing stop
+    tp1_hit = Column(Boolean, default=False)
+    tp2_hit = Column(Boolean, default=False)
+    tp3_hit = Column(Boolean, default=False)
+    stop_armed = Column(Boolean, default=False)  # trailing stop actif ou pas encore
+
+    status = Column(String, default="open")  # open | closed
+    realized_pnl_usd = Column(Float, default=0.0)
+    closed_at = Column(DateTime, nullable=True)
+
+
+class PaperFill(Base):
+    """Chaque vente partielle ou totale d'une position simulée, pour le reporting."""
+    __tablename__ = "paper_fills"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    position_id = Column(Integer, ForeignKey("paper_positions.id"))
+    fill_type = Column(String, nullable=False)  # tp1 | tp2 | tp3 | initial_stop | trailing_stop
+    price_usd = Column(Float, nullable=False)
+    fraction_sold = Column(Float, nullable=False)
+    pnl_usd = Column(Float, nullable=False)
+    timestamp = Column(DateTime, default=utcnow)
