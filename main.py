@@ -11,6 +11,7 @@ from models import Wallet
 from services.discovery import run_discovery_cycle
 from services.scoring import run_scoring_cycle
 from services.monitor import run_monitor_cycle
+from services.paper_trading import process_pending_signals, manage_open_positions, get_portfolio_summary
 from services.telegram_bot import poll_updates_once, notify_new_watchlist_wallet, send_message, set_bot_commands, main_keyboard, HELP_TEXT
 from config import config
 
@@ -78,6 +79,16 @@ async def monitor_loop():
         await asyncio.sleep(config.MONITOR_INTERVAL_SECONDS)
 
 
+async def paper_trading_loop():
+    while True:
+        try:
+            await process_pending_signals()
+            await manage_open_positions()
+        except Exception as e:
+            logger.exception(f"Erreur paper trading: {e}")
+        await asyncio.sleep(config.MONITOR_INTERVAL_SECONDS)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -86,6 +97,7 @@ async def lifespan(app: FastAPI):
     _background_tasks.append(asyncio.create_task(scoring_loop()))
     _background_tasks.append(asyncio.create_task(telegram_polling_loop()))
     _background_tasks.append(asyncio.create_task(monitor_loop()))
+    _background_tasks.append(asyncio.create_task(paper_trading_loop()))
     await set_bot_commands()
     await send_message("🚀 Wallet Scorer démarré.\n\n" + HELP_TEXT, reply_markup=main_keyboard())
     yield
@@ -152,3 +164,8 @@ async def trigger_scoring():
 async def trigger_monitor():
     result = await run_monitor_cycle()
     return result
+
+
+@app.get("/paper/portfolio")
+async def paper_portfolio():
+    return await get_portfolio_summary()
