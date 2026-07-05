@@ -53,6 +53,29 @@ class Config:
     RUG_LIQUIDITY_THRESHOLD_USD = float(os.getenv("RUG_LIQUIDITY_THRESHOLD_USD", "500"))
     MAX_TOKENS_TO_CHECK_FOR_RUGS = int(os.getenv("MAX_TOKENS_TO_CHECK_FOR_RUGS", "15"))
 
+    # --- Paper trading (Phase 3) ---
+    PAPER_INITIAL_CAPITAL_USD = float(os.getenv("PAPER_INITIAL_CAPITAL_USD", "100"))
+    PAPER_POSITION_SIZE_PCT = float(os.getenv("PAPER_POSITION_SIZE_PCT", "0.10"))
+
+    # Entrée: on n'entre pas tout de suite au signal, on attend un retracement
+    PAPER_ENTRY_WINDOW_MINUTES = int(os.getenv("PAPER_ENTRY_WINDOW_MINUTES", "10"))
+    PAPER_RETRACEMENT_PCT = float(os.getenv("PAPER_RETRACEMENT_PCT", "0.08"))  # -8% depuis le pic local
+    PAPER_MAX_DRAWDOWN_FROM_SIGNAL_PCT = float(os.getenv("PAPER_MAX_DRAWDOWN_FROM_SIGNAL_PCT", "0.30"))
+    PAPER_MIN_LIQUIDITY_USD = float(os.getenv("PAPER_MIN_LIQUIDITY_USD", "3000"))
+
+    # Sortie: paliers de take-profit (fraction de la position vendue à chaque palier)
+    PAPER_TP1_PCT = float(os.getenv("PAPER_TP1_PCT", "0.30"))   # +30%
+    PAPER_TP1_FRACTION = float(os.getenv("PAPER_TP1_FRACTION", "0.25"))
+    PAPER_TP2_PCT = float(os.getenv("PAPER_TP2_PCT", "0.75"))   # +75%
+    PAPER_TP2_FRACTION = float(os.getenv("PAPER_TP2_FRACTION", "0.25"))
+    PAPER_TP3_PCT = float(os.getenv("PAPER_TP3_PCT", "1.50"))   # +150%
+    PAPER_TP3_FRACTION = float(os.getenv("PAPER_TP3_FRACTION", "0.25"))
+
+    # Stop-loss initial (avant d'être "armé") et trailing stop (une fois armé)
+    PAPER_INITIAL_STOP_PCT = float(os.getenv("PAPER_INITIAL_STOP_PCT", "0.25"))     # -25% depuis l'entrée
+    PAPER_TRAILING_ARM_PCT = float(os.getenv("PAPER_TRAILING_ARM_PCT", "0.20"))     # s'arme à +20%
+    PAPER_TRAILING_STOP_PCT = float(os.getenv("PAPER_TRAILING_STOP_PCT", "0.25"))   # -25% depuis le pic
+
     # --- Watchlist ---
     SCORE_THRESHOLD_WATCHLIST = float(os.getenv("SCORE_THRESHOLD_WATCHLIST", "70"))
 
