@@ -3,6 +3,7 @@ Calcule les stats de performance d'un wallet à partir de son historique on-chai
 applique des filtres durs, puis calcule un score 0-100.
 """
 from datetime import datetime, timezone
+import asyncio
 from collections import defaultdict
 from sqlalchemy.orm import Session
 from database import SessionLocal
@@ -203,6 +204,7 @@ async def run_scoring_cycle():
             result = await score_wallet(w.address, db)
             if result:
                 results.append(result)
+            await asyncio.sleep(0.3)  # ménage le rate limit Helius entre chaque wallet
         return results
     finally:
         db.close()
