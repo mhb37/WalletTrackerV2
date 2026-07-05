@@ -14,6 +14,7 @@ COMMANDS_MENU = [
     {"command": "discovery", "description": "Lancer un cycle de découverte"},
     {"command": "scoring", "description": "Lancer un cycle de scoring"},
     {"command": "monitor", "description": "Vérifier les wallets watchlistés maintenant"},
+    {"command": "paper", "description": "Voir le portefeuille de paper trading"},
     {"command": "top", "description": "Top 10 wallets scorés"},
     {"command": "watchlist", "description": "Wallets actuellement suivis"},
     {"command": "help", "description": "Voir toutes les commandes"},
@@ -26,7 +27,8 @@ def main_keyboard() -> dict:
         "keyboard": [
             ["🔍 Discovery", "📊 Scoring"],
             ["🏆 Top wallets", "👀 Watchlist"],
-            ["📡 Monitor", "❓ Aide"],
+            ["📡 Monitor", "💼 Paper"],
+            ["❓ Aide"],
         ],
         "resize_keyboard": True,
         "is_persistent": True,
@@ -72,6 +74,7 @@ BUTTON_TO_COMMAND = {
     "🔍 discovery": "/discovery",
     "📊 scoring": "/scoring",
     "📡 monitor": "/monitor",
+    "💼 paper": "/paper",
     "🏆 top wallets": "/top",
     "👀 watchlist": "/watchlist",
     "❓ aide": "/help",
@@ -82,12 +85,14 @@ HELP_TEXT = (
     "🔍 /discovery — lance un cycle de découverte de nouveaux wallets\n"
     "📊 /scoring — recalcule le score de tous les wallets suivis\n"
     "📡 /monitor — vérifie les wallets watchlistés maintenant (nouveaux achats)\n"
+    "💼 /paper — portefeuille de paper trading (positions, PnL)\n"
     "🏆 /top — top 10 wallets scorés\n"
     "👀 /watchlist — wallets actuellement suivis (score ≥ seuil)\n"
     "📍 /wallet &lt;adresse&gt; — détails d'un wallet précis\n\n"
     "Utilise les boutons en bas de l'écran, ou tape les commandes directement.\n\n"
     "📡 Le monitoring tourne aussi automatiquement en fond: dès qu'un wallet "
-    "watchlisté fait un nouvel achat, tu reçois une alerte sans rien faire."
+    "watchlisté fait un nouvel achat, un signal est mis en observation, et une "
+    "position paper s'ouvre seulement si un bon point d'entrée se présente."
 )
 
 
@@ -136,6 +141,22 @@ async def handle_command(command: str, chat_id: str) -> None:
                     lines.append(f"• {category}: {count}")
 
             await send_message("\n".join(lines), chat_id)
+
+        elif normalized.startswith("/paper"):
+            from services.paper_trading import get_portfolio_summary
+            summary = await get_portfolio_summary()
+            pnl = summary["realized_pnl_usd"]
+            pnl_sign = "🟢" if pnl >= 0 else "🔴"
+            await send_message(
+                f"💼 <b>Portefeuille paper trading</b>\n\n"
+                f"Capital initial: ${summary['initial_capital_usd']:.2f}\n"
+                f"Capital actuel: ${summary['current_capital_usd']:.2f}\n"
+                f"{pnl_sign} PnL réalisé: ${pnl:+.2f}\n\n"
+                f"Positions ouvertes: {summary['open_positions']}\n"
+                f"Positions clôturées: {summary['closed_positions']}\n"
+                f"Capital déployé actuellement: ${summary['capital_deployed_usd']:.2f}",
+                chat_id,
+            )
 
         elif normalized.startswith("/monitor"):
             await send_message("📡 Vérification des wallets watchlistés...", chat_id)
