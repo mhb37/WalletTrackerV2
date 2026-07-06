@@ -22,19 +22,19 @@ async def run_discovery_cycle():
             config.MIN_PUMP_MULTIPLE
         )
         new_wallets_found = 0
+        diagnostics = []
 
         for pt in pumped_tokens:
             token_address = pt["token_address"]
 
             existing = db.query(Token).filter(Token.address == token_address).first()
             if existing and existing.used_for_discovery:
+                diagnostics.append(f"{token_address[:8]}: déjà traité")
                 continue  # déjà traité
 
             mint_time = pt.get("created_at")
             if mint_time is None:
-                # Pas de date de création fiable -> on ne peut pas déterminer
-                # une fenêtre "early buyers" correcte, on skip ce token.
-                logger.info(f"[discovery] {token_address[:8]}...: skip (pas de created_at DexScreener)")
+                diagnostics.append(f"{token_address[:8]}: pas de created_at")
                 if not existing:
                     token = Token(
                         address=token_address,
@@ -62,24 +62,20 @@ async def run_discovery_cycle():
 
             age_hours = (datetime.now(timezone.utc) - mint_time).total_seconds() / 3600
             if age_hours > config.MAX_TOKEN_AGE_HOURS_FOR_DISCOVERY:
-                # Trop vieux: remonter jusqu'aux tout premiers acheteurs via pagination
-                # arrière nécessiterait trop d'appels API. On skip ce token.
-                logger.info(
-                    f"[discovery] {token_address[:8]}...: skip (age_h={age_hours:.1f} > "
-                    f"{config.MAX_TOKEN_AGE_HOURS_FOR_DISCOVERY})"
-                )
+                diagnostics.append(f"{token_address[:8]}: trop vieux ({age_hours:.1f}h)")
                 token.used_for_discovery = True
                 db.commit()
                 continue
 
-            logger.info(f"[discovery] {token_address[:8]}...: age_h={age_hours:.1f}, recherche early buyers...")
-            early_buyers = await helius_client.get_token_early_buyers(
+            early_buyers, stop_reason = await helius_client.get_token_early_buyers(
                 token_address=token_address,
                 mint_timestamp=mint_time,
                 window_minutes=config.EARLY_BUYER_WINDOW_MINUTES,
                 max_buyers=config.MAX_EARLY_BUYERS_PER_TOKEN,
             )
-            logger.info(f"[discovery] {token_address[:8]}...: {len(early_buyers)} early buyers trouvés")
+            diagnostics.append(
+                f"{token_address[:8]}: age={age_hours:.1f}h, {len(early_buyers)} buyers, {stop_reason}"
+            )
 
             total = len(early_buyers) or 1
             for idx, buyer in enumerate(early_buyers):
@@ -113,7 +109,11 @@ async def run_discovery_cycle():
 
             await asyncio.sleep(0.5)  # ménage le rate limit Helius entre chaque token
 
-        return {"tokens_scanned": len(pumped_tokens), "new_wallets_found": new_wallets_found}
+        return {
+            "tokens_scanned": len(pumped_tokens),
+            "new_wallets_found": new_wallets_found,
+            "diagnostics": diagnostics,
+        }
 
     finally:
         db.close()
