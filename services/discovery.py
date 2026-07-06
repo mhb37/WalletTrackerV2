@@ -3,6 +3,7 @@ Phase 1 du pipeline: repère des tokens qui ont pump, identifie leurs early buye
 et les enregistre comme wallets candidats à scorer.
 """
 import asyncio
+import logging
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from database import SessionLocal
@@ -10,6 +11,8 @@ from models import Wallet, Token, WalletTransaction
 from services.dexscreener_client import dexscreener_client
 from services.helius_client import helius_client
 from config import config
+
+logger = logging.getLogger("wallet-scorer")
 
 
 async def run_discovery_cycle():
@@ -31,6 +34,7 @@ async def run_discovery_cycle():
             if mint_time is None:
                 # Pas de date de création fiable -> on ne peut pas déterminer
                 # une fenêtre "early buyers" correcte, on skip ce token.
+                logger.info(f"[discovery] {token_address[:8]}...: skip (pas de created_at DexScreener)")
                 if not existing:
                     token = Token(
                         address=token_address,
@@ -60,16 +64,22 @@ async def run_discovery_cycle():
             if age_hours > config.MAX_TOKEN_AGE_HOURS_FOR_DISCOVERY:
                 # Trop vieux: remonter jusqu'aux tout premiers acheteurs via pagination
                 # arrière nécessiterait trop d'appels API. On skip ce token.
+                logger.info(
+                    f"[discovery] {token_address[:8]}...: skip (age_h={age_hours:.1f} > "
+                    f"{config.MAX_TOKEN_AGE_HOURS_FOR_DISCOVERY})"
+                )
                 token.used_for_discovery = True
                 db.commit()
                 continue
 
+            logger.info(f"[discovery] {token_address[:8]}...: age_h={age_hours:.1f}, recherche early buyers...")
             early_buyers = await helius_client.get_token_early_buyers(
                 token_address=token_address,
                 mint_timestamp=mint_time,
                 window_minutes=config.EARLY_BUYER_WINDOW_MINUTES,
                 max_buyers=config.MAX_EARLY_BUYERS_PER_TOKEN,
             )
+            logger.info(f"[discovery] {token_address[:8]}...: {len(early_buyers)} early buyers trouvés")
 
             total = len(early_buyers) or 1
             for idx, buyer in enumerate(early_buyers):
