@@ -28,47 +28,35 @@ class HeliusClient:
     async def get_token_early_buyers(
         self, token_address: str, mint_timestamp: datetime, window_minutes: int, max_buyers: int,
         max_pages: int = 15,
-    ) -> list[dict]:
+    ) -> tuple[list[dict], str]:
         """
         Récupère les premiers acheteurs d'un token dans une fenêtre de temps donnée
         après sa création, via les transactions du token (swaps).
 
-        Helius renvoie les transactions du plus récent au plus ancien. Si le token
-        existe depuis longtemps, la fenêtre "early" n'est PAS dans les 100 dernières
-        transactions -> il faut paginer en arrière (paramètre "before") jusqu'à
-        atteindre la période de création du token.
-
-        Retourne une liste de {wallet, timestamp, token_amount, tx_signature}.
+        Retourne (liste_de_buyers, raison_arret) où raison_arret explique pourquoi
+        la pagination s'est arrêtée (utile pour diagnostiquer sans dépendre des logs
+        serveur, renvoyé directement dans les réponses Telegram).
         """
         url = config.HELIUS_TX_URL.format(address=token_address)
         mint_ts = mint_timestamp.timestamp()
         cutoff = mint_ts + (window_minutes * 60)
-        age_hours = (datetime.now(timezone.utc).timestamp() - mint_ts) / 3600
-        logger.info(
-            f"[early_buyers] {token_address[:8]}...: mint_time={mint_timestamp.isoformat()}, "
-            f"age_h={age_hours:.1f}, fenetre_min={window_minutes}"
-        )
 
         matched_txs = []
         before_sig = None
         import asyncio as _asyncio
 
         stop_reason = "max_pages_reached"
-        swap_type_seen = set()
+        types_seen = set()
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            for page_num in range(max_pages):
+            for _ in range(max_pages):
                 params = {"api-key": self.api_key, "limit": 100}
                 if before_sig:
                     params["before"] = before_sig
 
                 resp = await client.get(url, params=params)
                 if resp.status_code != 200:
-                    stop_reason = f"http_error_{resp.status_code}"
-                    logger.warning(
-                        f"[early_buyers] {token_address[:8]}... page {page_num}: "
-                        f"HTTP {resp.status_code}, arrêt"
-                    )
+                    stop_reason = f"http_{resp.status_code}"
                     break
                 txs = resp.json()
                 if not txs:
@@ -84,7 +72,7 @@ class HeliusClient:
                 for tx in txs:
                     tx_type = tx.get("type")
                     if tx_type:
-                        swap_type_seen.add(tx_type)
+                        types_seen.add(tx_type)
                     ts = tx.get("timestamp")
                     if ts is None:
                         continue
@@ -94,18 +82,13 @@ class HeliusClient:
                 before_sig = txs[-1].get("signature")
 
                 if oldest_ts_in_page < mint_ts:
-                    stop_reason = "passed_mint_time"
+                    stop_reason = "passed_mint"
                     break
                 if oldest_ts_in_page <= cutoff:
                     stop_reason = "reached_window"
                     break
 
                 await _asyncio.sleep(0.15)  # ménage le rate limit Helius free tier
-
-        logger.info(
-            f"[early_buyers] {token_address[:8]}...: raison_arret={stop_reason}, "
-            f"tx_matchees={len(matched_txs)}, types_vus={list(swap_type_seen)[:5]}"
-        )
 
         buyers = []
         for tx in matched_txs:
@@ -131,7 +114,8 @@ class HeliusClient:
             if len(early_buyers) >= max_buyers:
                 break
 
-        return early_buyers
+        detail = f"{stop_reason}, tx_matchees={len(matched_txs)}, types={list(types_seen)[:3]}"
+        return early_buyers, detail
 
     async def get_wallet_transaction_history(
         self, address: str, max_pages: int = 5, page_size: int = 100
