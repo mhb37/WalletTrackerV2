@@ -109,12 +109,21 @@ async def handle_command(command: str, chat_id: str) -> None:
             await send_message("🔍 Discovery en cours...", chat_id)
             from services.discovery import run_discovery_cycle
             result = await run_discovery_cycle()
-            await send_message(
-                f"✅ Discovery terminée\n"
-                f"Tokens scannés: {result['tokens_scanned']}\n"
+
+            lines = [
+                f"✅ Discovery terminée",
+                f"Tokens scannés: {result['tokens_scanned']}",
                 f"Nouveaux wallets trouvés: {result['new_wallets_found']}",
-                chat_id,
-            )
+            ]
+            diagnostics = result.get("diagnostics", [])
+            if diagnostics:
+                lines.append("\n<b>Détail par token:</b>")
+                for d in diagnostics[:15]:
+                    lines.append(f"• {d}")
+                if len(diagnostics) > 15:
+                    lines.append(f"... et {len(diagnostics) - 15} de plus")
+
+            await send_message("\n".join(lines), chat_id)
 
         elif normalized.startswith("/scoring"):
             await send_message("📊 Scoring en cours...", chat_id)
