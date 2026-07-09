@@ -2,12 +2,41 @@
 Client pour l'API Helius (transactions parsées + RPC).
 Doc: https://docs.helius.dev/
 """
-import logging
+import asyncio
+import time
 import httpx
 from datetime import datetime, timezone
 from config import config
 
-logger = logging.getLogger("wallet-scorer")
+# Throttle global: partagé par TOUTES les boucles (discovery, scoring, monitor,
+# paper trading) pour qu'elles ne dépassent jamais ensemble le rate limit Helius
+# free tier, même si elles tournent en parallèle.
+_throttle_lock = asyncio.Lock()
+_last_call_time = 0.0
+MIN_INTERVAL_SECONDS = 0.25
+
+
+async def _throttle():
+    global _last_call_time
+    async with _throttle_lock:
+        now = time.monotonic()
+        wait = MIN_INTERVAL_SECONDS - (now - _last_call_time)
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _last_call_time = time.monotonic()
+
+
+async def _get_with_retry(client: httpx.AsyncClient, url: str, params: dict, max_retries: int = 2) -> httpx.Response:
+    """GET avec throttle global + retry avec backoff si on se prend un 429."""
+    resp = None
+    for attempt in range(max_retries + 1):
+        await _throttle()
+        resp = await client.get(url, params=params)
+        if resp.status_code != 429:
+            return resp
+        if attempt < max_retries:
+            await asyncio.sleep(1.5 * (attempt + 1))
+    return resp
 
 
 class HeliusClient:
@@ -20,7 +49,7 @@ class HeliusClient:
         url = config.HELIUS_TX_URL.format(address=address)
         params = {"api-key": self.api_key, "limit": limit}
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.get(url, params=params)
+            resp = await _get_with_retry(client, url, params)
             if resp.status_code != 200:
                 return []
             return resp.json()
@@ -54,7 +83,7 @@ class HeliusClient:
                 if before_sig:
                     params["before"] = before_sig
 
-                resp = await client.get(url, params=params)
+                resp = await _get_with_retry(client, url, params)
                 if resp.status_code != 200:
                     stop_reason = f"http_{resp.status_code}"
                     break
@@ -87,8 +116,6 @@ class HeliusClient:
                 if oldest_ts_in_page <= cutoff:
                     stop_reason = "reached_window"
                     break
-
-                await _asyncio.sleep(0.15)  # ménage le rate limit Helius free tier
 
         buyers = []
         for tx in matched_txs:
@@ -140,8 +167,8 @@ class HeliusClient:
                 if before_sig:
                     params["before"] = before_sig
 
-                resp = await client.get(
-                    config.HELIUS_TX_URL.format(address=address), params=params
+                resp = await _get_with_retry(
+                    client, config.HELIUS_TX_URL.format(address=address), params
                 )
                 if resp.status_code != 200:
                     break
@@ -159,8 +186,6 @@ class HeliusClient:
 
                 if (now_ts - oldest_ts) >= comfortable_age_seconds:
                     break  # ancienneté largement prouvée, pas la peine de creuser plus loin
-
-                await _asyncio.sleep(0.12)
 
         return all_txs
 
