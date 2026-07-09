@@ -19,6 +19,7 @@ class Config:
 
     # --- DexScreener (pas de clé requise) ---
     DEXSCREENER_TOKEN_BOOSTS_URL = "https://api.dexscreener.com/token-boosts/latest/v1"
+    DEXSCREENER_TOKEN_BOOSTS_TOP_URL = "https://api.dexscreener.com/token-boosts/top/v1"
     DEXSCREENER_TOKEN_PROFILES_URL = "https://api.dexscreener.com/token-profiles/latest/v1"
     DEXSCREENER_PAIRS_URL = "https://api.dexscreener.com/latest/dex/tokens/{address}"
     DEXSCREENER_SEARCH_URL = "https://api.dexscreener.com/latest/dex/search"
@@ -82,7 +83,7 @@ class Config:
     # --- Scheduler ---
     DISCOVERY_INTERVAL_MINUTES = int(os.getenv("DISCOVERY_INTERVAL_MINUTES", "30"))
     RESCORE_INTERVAL_MINUTES = int(os.getenv("RESCORE_INTERVAL_MINUTES", "15"))
-    MONITOR_INTERVAL_SECONDS = int(os.getenv("MONITOR_INTERVAL_SECONDS", "20"))
+    MONITOR_INTERVAL_SECONDS = int(os.getenv("MONITOR_INTERVAL_SECONDS", "45"))
 
 
 config = Config()
