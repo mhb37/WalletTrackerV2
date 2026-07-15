@@ -16,6 +16,11 @@ _last_call_time = 0.0
 MIN_INTERVAL_SECONDS = 0.25
 
 
+class HeliusRateLimited(Exception):
+    """Levée quand Helius répond 429 après épuisement des tentatives (rate limit ou quota)."""
+    pass
+
+
 async def _throttle():
     global _last_call_time
     async with _throttle_lock:
@@ -27,8 +32,7 @@ async def _throttle():
 
 
 async def _get_with_retry(client: httpx.AsyncClient, url: str, params: dict, max_retries: int = 2) -> httpx.Response:
-    """GET avec throttle global + retry avec backoff si on se prend un 429."""
-    resp = None
+    """GET avec throttle global + retry avec backoff. Lève HeliusRateLimited si tout échoue en 429."""
     for attempt in range(max_retries + 1):
         await _throttle()
         resp = await client.get(url, params=params)
@@ -36,7 +40,7 @@ async def _get_with_retry(client: httpx.AsyncClient, url: str, params: dict, max
             return resp
         if attempt < max_retries:
             await asyncio.sleep(1.5 * (attempt + 1))
-    return resp
+    raise HeliusRateLimited(f"429 persistant après {max_retries + 1} tentatives sur {url}")
 
 
 class HeliusClient:
