@@ -15,6 +15,7 @@ COMMANDS_MENU = [
     {"command": "scoring", "description": "Lancer un cycle de scoring"},
     {"command": "monitor", "description": "Vérifier les wallets watchlistés maintenant"},
     {"command": "paper", "description": "Voir le portefeuille de paper trading"},
+    {"command": "trades", "description": "Journal détaillé des trades + espérance"},
     {"command": "top", "description": "Top 10 wallets scorés"},
     {"command": "watchlist", "description": "Wallets actuellement suivis"},
     {"command": "help", "description": "Voir toutes les commandes"},
@@ -28,7 +29,7 @@ def main_keyboard() -> dict:
             ["🔍 Discovery", "📊 Scoring"],
             ["🏆 Top wallets", "👀 Watchlist"],
             ["📡 Monitor", "💼 Paper"],
-            ["❓ Aide"],
+            ["📒 Trades", "❓ Aide"],
         ],
         "resize_keyboard": True,
         "is_persistent": True,
@@ -75,6 +76,7 @@ BUTTON_TO_COMMAND = {
     "📊 scoring": "/scoring",
     "📡 monitor": "/monitor",
     "💼 paper": "/paper",
+    "📒 trades": "/trades",
     "🏆 top wallets": "/top",
     "👀 watchlist": "/watchlist",
     "❓ aide": "/help",
@@ -86,6 +88,7 @@ HELP_TEXT = (
     "📊 /scoring — recalcule le score de tous les wallets suivis\n"
     "📡 /monitor — vérifie les wallets watchlistés maintenant (nouveaux achats)\n"
     "💼 /paper — portefeuille de paper trading (positions, PnL)\n"
+    "📒 /trades — journal détaillé des trades + espérance mathématique\n"
     "🏆 /top — top 10 wallets scorés\n"
     "👀 /watchlist — wallets actuellement suivis (score ≥ seuil)\n"
     "📍 /wallet &lt;adresse&gt; — détails d'un wallet précis\n\n"
@@ -148,6 +151,41 @@ async def handle_command(command: str, chat_id: str) -> None:
                 lines.append("\nRaisons de rejet:")
                 for category, count in sorted(tally.items(), key=lambda x: -x[1]):
                     lines.append(f"• {category}: {count}")
+
+            await send_message("\n".join(lines), chat_id)
+
+        elif normalized.startswith("/trades"):
+            from services.paper_trading import get_trade_journal, get_expectancy_stats
+            journal = await get_trade_journal(limit=10)
+            stats = await get_expectancy_stats()
+
+            lines = ["📒 <b>Journal des trades</b>\n"]
+
+            if stats["sample_size"] == 0:
+                lines.append("Aucun trade clôturé pour l'instant.")
+            else:
+                reliability = "✅ fiable" if stats["reliable"] else f"⚠️ encore trop peu de données (seuil: 20)"
+                lines.append(
+                    f"<b>Espérance mathématique</b> ({stats['sample_size']} trades clôturés, {reliability})\n"
+                    f"Win rate: {stats['win_rate']}%\n"
+                    f"Gain moyen: {stats['avg_win_pct']:+.1f}%\n"
+                    f"Perte moyenne: {stats['avg_loss_pct']:+.1f}%\n"
+                    f"Espérance par trade: {stats['expectancy_pct']:+.2f}%\n"
+                )
+
+            if journal:
+                lines.append("\n<b>10 derniers trades:</b>")
+                for t in journal:
+                    status_icon = "🟢" if t["status"] == "closed" and t["pnl_pct"] > 0 else (
+                        "🔴" if t["status"] == "closed" else "🟡"
+                    )
+                    retr = f"{t['retracement_pct_at_entry']:.0%}" if t['retracement_pct_at_entry'] is not None else "?"
+                    delay = f"{t['entry_delay_seconds']/60:.0f}min" if t['entry_delay_seconds'] is not None else "?"
+                    score = f"{t['wallet_score_at_entry']:.0f}" if t['wallet_score_at_entry'] is not None else "?"
+                    lines.append(
+                        f"{status_icon} <code>{t['token_address'][:6]}...</code> "
+                        f"{t['pnl_pct']:+.1f}% | retr={retr} délai={delay} score={score}"
+                    )
 
             await send_message("\n".join(lines), chat_id)
 
