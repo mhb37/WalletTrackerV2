@@ -8,7 +8,7 @@ from collections import defaultdict
 from sqlalchemy.orm import Session
 from database import SessionLocal
 from models import Wallet
-from services.helius_client import helius_client
+from services import data_provider
 from services.rug_detector import compute_rug_stats
 from config import config
 
@@ -131,7 +131,7 @@ async def score_wallet(wallet_address: str, db: Session) -> dict | None:
     if not wallet:
         return None
 
-    txs = await helius_client.get_wallet_transaction_history(
+    txs = await data_provider.get_wallet_transaction_history(
         wallet_address, max_pages=config.MAX_HISTORY_PAGES_FOR_SCORING
     )
     if not txs:
