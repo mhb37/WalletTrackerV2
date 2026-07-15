@@ -4,7 +4,7 @@ Détecte leurs nouveaux achats et envoie une alerte Telegram avec les infos du t
 """
 from database import SessionLocal
 from models import Wallet
-from services.helius_client import helius_client
+from services import data_provider
 from services.dexscreener_client import dexscreener_client
 from services.telegram_bot import send_message
 from services.paper_trading import create_pending_signal
@@ -74,7 +74,7 @@ async def run_monitor_cycle() -> dict:
         alerts_sent = 0
 
         for wallet in wallets:
-            txs = await helius_client.get_wallet_transactions(wallet.address, limit=20)
+            txs = await data_provider.get_wallet_transactions(wallet.address, limit=20)
             if not txs:
                 continue
 
