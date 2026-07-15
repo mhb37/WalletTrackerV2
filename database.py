@@ -37,6 +37,11 @@ def _run_light_migrations():
     statements = [
         "ALTER TABLE wallets ADD COLUMN IF NOT EXISTS rejection_reason VARCHAR",
         "ALTER TABLE wallets ADD COLUMN IF NOT EXISTS last_seen_signature VARCHAR",
+        "ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS signal_created_at TIMESTAMP",
+        "ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS entry_delay_seconds FLOAT",
+        "ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS retracement_pct_at_entry FLOAT",
+        "ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS wallet_score_at_entry FLOAT",
+        "ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS liquidity_usd_at_entry FLOAT",
     ]
     with engine.connect() as conn:
         for stmt in statements:
