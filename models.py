@@ -117,6 +117,13 @@ class PaperPosition(Base):
     realized_pnl_usd = Column(Float, default=0.0)
     closed_at = Column(DateTime, nullable=True)
 
+    # Contexte capturé à l'entrée, pour analyser CE QUI a marché ou pas
+    signal_created_at = Column(DateTime, nullable=True)
+    entry_delay_seconds = Column(Float, nullable=True)  # temps entre le signal et l'entrée réelle
+    retracement_pct_at_entry = Column(Float, nullable=True)  # creux observé avant d'entrer
+    wallet_score_at_entry = Column(Float, nullable=True)
+    liquidity_usd_at_entry = Column(Float, nullable=True)
+
 
 class PaperFill(Base):
     """Chaque vente partielle ou totale d'une position simulée, pour le reporting."""
