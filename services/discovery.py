@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from database import SessionLocal
 from models import Wallet, Token, WalletTransaction
 from services.dexscreener_client import dexscreener_client
-from services.helius_client import helius_client
+from services import data_provider
 from config import config
 
 logger = logging.getLogger("wallet-scorer")
@@ -67,7 +67,7 @@ async def run_discovery_cycle():
                 db.commit()
                 continue
 
-            early_buyers, stop_reason = await helius_client.get_token_early_buyers(
+            early_buyers, stop_reason = await data_provider.get_token_early_buyers(
                 token_address=token_address,
                 mint_timestamp=mint_time,
                 window_minutes=config.EARLY_BUYER_WINDOW_MINUTES,
