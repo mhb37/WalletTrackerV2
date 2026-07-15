@@ -42,13 +42,30 @@ async def create_pending_signal(wallet_address: str, token_address: str, current
         db.close()
 
 
-async def _open_position(db, signal: PendingSignal, entry_price: float):
+async def _open_position(
+    db, signal: PendingSignal, entry_price: float, retracement_pct: float, liquidity_usd: float | None
+):
+    from models import Wallet
+    wallet = db.query(Wallet).filter(Wallet.address == signal.wallet_address).first()
+    wallet_score = wallet.score if wallet else None
+
+    now = datetime.now(timezone.utc)
+    signal_created_at = signal.created_at
+    if signal_created_at.tzinfo is None:
+        signal_created_at = signal_created_at.replace(tzinfo=timezone.utc)
+    entry_delay_seconds = (now - signal_created_at).total_seconds()
+
     position = PaperPosition(
         wallet_address=signal.wallet_address,
         token_address=signal.token_address,
         entry_price_usd=entry_price,
         initial_size_usd=config.PAPER_INITIAL_CAPITAL_USD * config.PAPER_POSITION_SIZE_PCT,
         peak_price_usd=entry_price,
+        signal_created_at=signal.created_at,
+        entry_delay_seconds=entry_delay_seconds,
+        retracement_pct_at_entry=retracement_pct,
+        wallet_score_at_entry=wallet_score,
+        liquidity_usd_at_entry=liquidity_usd,
     )
     db.add(position)
     signal.status = "entered"
@@ -59,7 +76,9 @@ async def _open_position(db, signal: PendingSignal, entry_price: float):
         f"Token: <code>{signal.token_address}</code>\n"
         f"Entrée: ${entry_price:.8f}\n"
         f"Taille: ${position.initial_size_usd:.2f}\n"
-        f"Signal: <code>{signal.wallet_address[:6]}...{signal.wallet_address[-4:]}</code>"
+        f"Retracement observé: {retracement_pct:.1%}\n"
+        f"Délai signal→entrée: {entry_delay_seconds/60:.1f} min\n"
+        f"Signal: <code>{signal.wallet_address[:6]}...{signal.wallet_address[-4:]}</code> (score {wallet_score or '?'})"
     )
 
 
@@ -104,7 +123,7 @@ async def process_pending_signals():
                     signal.status = "rejected"
                     db.commit()
                     continue
-                await _open_position(db, signal, price)
+                await _open_position(db, signal, price, retracement_from_peak, liquidity)
 
         # nettoie les signaux expirés depuis longtemps pour ne pas gonfler la table
         db.query(PendingSignal).filter(
@@ -227,6 +246,77 @@ async def get_portfolio_summary() -> dict:
             "open_positions": len(open_positions),
             "closed_positions": len(closed_positions),
             "capital_deployed_usd": round(capital_deployed, 2),
+        }
+    finally:
+        db.close()
+
+
+async def get_trade_journal(limit: int = 15) -> list[dict]:
+    """Détail par trade: contexte d'entrée + résultat, pour comprendre CE QUI marche ou pas."""
+    db = SessionLocal()
+    try:
+        positions = (
+            db.query(PaperPosition)
+            .order_by(PaperPosition.entry_time.desc())
+            .limit(limit)
+            .all()
+        )
+        journal = []
+        for p in positions:
+            pnl_pct = (p.realized_pnl_usd / p.initial_size_usd * 100) if p.initial_size_usd else 0
+            journal.append({
+                "id": p.id,
+                "token_address": p.token_address,
+                "status": p.status,
+                "entry_time": p.entry_time,
+                "realized_pnl_usd": p.realized_pnl_usd,
+                "pnl_pct": pnl_pct,
+                "retracement_pct_at_entry": p.retracement_pct_at_entry,
+                "entry_delay_seconds": p.entry_delay_seconds,
+                "wallet_score_at_entry": p.wallet_score_at_entry,
+                "liquidity_usd_at_entry": p.liquidity_usd_at_entry,
+                "tp1_hit": p.tp1_hit,
+                "tp2_hit": p.tp2_hit,
+                "tp3_hit": p.tp3_hit,
+            })
+        return journal
+    finally:
+        db.close()
+
+
+async def get_expectancy_stats(min_reliable_sample: int = 20) -> dict:
+    """
+    Espérance mathématique: (% gagnants x gain moyen) - (% perdants x perte moyenne).
+    C'est la vraie mesure de rentabilité d'une stratégie, plus fiable qu'un simple
+    win rate brut. `reliable=False` tant qu'on n'a pas assez de trades clôturés:
+    en dessous du seuil, mieux vaut observer que d'ajuster les paramètres.
+    """
+    db = SessionLocal()
+    try:
+        closed = db.query(PaperPosition).filter(PaperPosition.status == "closed").all()
+        n = len(closed)
+        if n == 0:
+            return {"sample_size": 0, "reliable": False}
+
+        pnl_pcts = [
+            (p.realized_pnl_usd / p.initial_size_usd) * 100
+            for p in closed if p.initial_size_usd
+        ]
+        wins = [p for p in pnl_pcts if p > 0]
+        losses = [p for p in pnl_pcts if p <= 0]
+
+        win_rate = len(wins) / n if n else 0
+        avg_win_pct = (sum(wins) / len(wins)) if wins else 0
+        avg_loss_pct = (sum(losses) / len(losses)) if losses else 0
+        expectancy_pct = (win_rate * avg_win_pct) + ((1 - win_rate) * avg_loss_pct)
+
+        return {
+            "sample_size": n,
+            "win_rate": round(win_rate * 100, 1),
+            "avg_win_pct": round(avg_win_pct, 1),
+            "avg_loss_pct": round(avg_loss_pct, 1),
+            "expectancy_pct": round(expectancy_pct, 2),
+            "reliable": n >= min_reliable_sample,
         }
     finally:
         db.close()
