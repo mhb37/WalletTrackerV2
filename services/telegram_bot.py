@@ -124,9 +124,9 @@ async def handle_command(command: str, chat_id: str) -> None:
             if source_counts:
                 lines.append(
                     f"\n<b>Sources DexScreener:</b>\n"
-                    f"• latest_boosted: {source_counts.get('latest_boosted', '?')}\n"
-                    f"• top_boosted: {source_counts.get('top_boosted', '?')}\n"
-                    f"• profiles: {source_counts.get('profiles', '?')}\n"
+                    f"• latest_boosted: {source_counts.get('latest_boosted', '?')} (http {source_counts.get('latest_boosted_http', '?')})\n"
+                    f"• top_boosted: {source_counts.get('top_boosted', '?')} (http {source_counts.get('top_boosted_http', '?')})\n"
+                    f"• profiles: {source_counts.get('profiles', '?')} (http {source_counts.get('profiles_http', '?')})\n"
                     f"• combiné unique (Solana): {source_counts.get('combined_solana', '?')}"
                 )
 
