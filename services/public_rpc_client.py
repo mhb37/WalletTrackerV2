@@ -18,7 +18,7 @@ PUBLIC_RPC_URL = "https://api.mainnet-beta.solana.com"
 
 _throttle_lock = asyncio.Lock()
 _last_call_time = 0.0
-MIN_INTERVAL_SECONDS = 0.5
+MIN_INTERVAL_SECONDS = 2.0  # RPC public partagé mondialement: seuil bien plus strict qu'Helius
 
 
 async def _throttle():
@@ -31,17 +31,21 @@ async def _throttle():
         _last_call_time = time.monotonic()
 
 
-async def _rpc_call(client: httpx.AsyncClient, method: str, params: list):
-    await _throttle()
+async def _rpc_call(client: httpx.AsyncClient, method: str, params: list, max_retries: int = 2):
     payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
-    try:
-        resp = await client.post(PUBLIC_RPC_URL, json=payload, timeout=20.0)
-    except httpx.RequestError:
+    for attempt in range(max_retries + 1):
+        await _throttle()
+        try:
+            resp = await client.post(PUBLIC_RPC_URL, json=payload, timeout=20.0)
+        except httpx.RequestError:
+            return None
+        if resp.status_code == 200:
+            return resp.json().get("result")
+        if resp.status_code == 429 and attempt < max_retries:
+            await asyncio.sleep(3.0 * (attempt + 1))
+            continue
         return None
-    if resp.status_code != 200:
-        return None
-    data = resp.json()
-    return data.get("result")
+    return None
 
 
 async def get_signatures(client: httpx.AsyncClient, address: str, limit: int = 100, before: str | None = None) -> list[dict]:
