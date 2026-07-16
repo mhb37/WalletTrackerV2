@@ -35,9 +35,13 @@ async def get_token_early_buyers(
         )
 
 
-async def get_wallet_transaction_history(address: str, max_pages: int = 5) -> list[dict]:
+async def get_wallet_transaction_history(address: str, max_pages: int = 5) -> tuple[list[dict], bool]:
+    """Retourne (transactions, a_utilise_le_fallback) pour que le scoring puisse
+    se méfier des données incomplètes plutôt que d'écraser un bon score à tort."""
     try:
-        return await helius_client.get_wallet_transaction_history(address, max_pages=max_pages)
+        txs = await helius_client.get_wallet_transaction_history(address, max_pages=max_pages)
+        return txs, False
     except HeliusRateLimited:
         logger.warning(f"[fallback] Helius rate-limité -> RPC public (history {address[:8]}...)")
-        return await public_rpc_client.get_wallet_transaction_history(address, max_pages=3, page_size=50)
+        txs = await public_rpc_client.get_wallet_transaction_history(address, max_pages=3, page_size=50)
+        return txs, True
