@@ -46,16 +46,25 @@ class DexScreenerClient:
             pairs = data.get("pairs") or []
             return [p for p in pairs if p.get("chainId") == "solana"]
 
-    async def find_pumped_solana_tokens(self, min_pump_multiple: float) -> list[dict]:
+    async def find_pumped_solana_tokens(self, min_pump_multiple: float) -> tuple[list[dict], dict]:
         """
         Combine plusieurs flux DexScreener (latest boosts, top boosts, profiles)
         avec leurs données de marché pour ne garder que ceux qui ont réellement
         pump (priceChange sur 24h en positif fort). Plusieurs flux = plus de
         candidats par cycle, sans jamais assouplir le seuil de qualité.
+
+        Retourne (candidats, comptes_par_source) pour pouvoir diagnostiquer un
+        cycle à 0 sans deviner (ex: un flux DexScreener en panne ce jour-là).
         """
         latest_boosted = await self.get_boosted_tokens()
         top_boosted = await self.get_top_boosted_tokens()
         profiles = await self.get_token_profiles()
+
+        source_counts = {
+            "latest_boosted": len(latest_boosted),
+            "top_boosted": len(top_boosted),
+            "profiles": len(profiles),
+        }
 
         # dédoublonne par adresse de token, en gardant l'ordre d'apparition
         seen_addresses = set()
@@ -66,6 +75,9 @@ class DexScreenerClient:
                 continue
             seen_addresses.add(token_address)
             combined.append(item)
+
+        source_counts["combined_unique"] = len(combined)
+        source_counts["combined_solana"] = sum(1 for i in combined if i.get("chainId") == "solana")
 
         candidates = []
 
@@ -103,7 +115,7 @@ class DexScreenerClient:
                 "current_price_usd": float(best_pair.get("priceUsd", 0) or 0),
             })
 
-        return candidates
+        return candidates, source_counts
 
 
 dexscreener_client = DexScreenerClient()
