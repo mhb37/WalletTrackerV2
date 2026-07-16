@@ -18,7 +18,7 @@ logger = logging.getLogger("wallet-scorer")
 async def run_discovery_cycle():
     db: Session = SessionLocal()
     try:
-        pumped_tokens = await dexscreener_client.find_pumped_solana_tokens(
+        pumped_tokens, source_counts = await dexscreener_client.find_pumped_solana_tokens(
             config.MIN_PUMP_MULTIPLE
         )
         new_wallets_found = 0
@@ -113,6 +113,7 @@ async def run_discovery_cycle():
             "tokens_scanned": len(pumped_tokens),
             "new_wallets_found": new_wallets_found,
             "diagnostics": diagnostics,
+            "source_counts": source_counts,
         }
 
     finally:
