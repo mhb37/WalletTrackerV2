@@ -131,11 +131,24 @@ async def score_wallet(wallet_address: str, db: Session) -> dict | None:
     if not wallet:
         return None
 
-    txs = await data_provider.get_wallet_transaction_history(
+    txs, used_fallback = await data_provider.get_wallet_transaction_history(
         wallet_address, max_pages=config.MAX_HISTORY_PAGES_FOR_SCORING
     )
     if not txs:
         return None
+
+    if used_fallback and len(txs) < config.MIN_TOTAL_TRADES:
+        # Le RPC public de secours n'a pas remonté assez de données pour juger
+        # équitablement ce wallet -> on NE TOUCHE PAS à son score existant.
+        # Mieux vaut garder le dernier verdict fiable que d'écraser un bon
+        # wallet à tort à cause d'une infrastructure de secours plus limitée.
+        return {
+            "address": wallet_address,
+            "passed": wallet.passed_hard_filters,
+            "score": wallet.score,
+            "reasons": ["donnees_insuffisantes_fallback"],
+            "skipped": True,
+        }
 
     timestamps = [t.get("timestamp") for t in txs if t.get("timestamp") is not None]
     first_activity = (
