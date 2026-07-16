@@ -118,6 +118,17 @@ async def handle_command(command: str, chat_id: str) -> None:
                 f"Tokens scannés: {result['tokens_scanned']}",
                 f"Nouveaux wallets trouvés: {result['new_wallets_found']}",
             ]
+
+            source_counts = result.get("source_counts")
+            if source_counts:
+                lines.append(
+                    f"\n<b>Sources DexScreener:</b>\n"
+                    f"• latest_boosted: {source_counts.get('latest_boosted', '?')}\n"
+                    f"• top_boosted: {source_counts.get('top_boosted', '?')}\n"
+                    f"• profiles: {source_counts.get('profiles', '?')}\n"
+                    f"• combiné unique (Solana): {source_counts.get('combined_solana', '?')}"
+                )
+
             diagnostics = result.get("diagnostics", [])
             if diagnostics:
                 lines.append("\n<b>Détail par token:</b>")
