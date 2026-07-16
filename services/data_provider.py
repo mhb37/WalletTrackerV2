@@ -18,7 +18,7 @@ async def get_wallet_transactions(address: str, limit: int = 100) -> list[dict]:
         return await helius_client.get_wallet_transactions(address, limit=limit)
     except HeliusRateLimited:
         logger.warning(f"[fallback] Helius rate-limité -> RPC public (get_wallet_transactions {address[:8]}...)")
-        return await public_rpc_client.get_wallet_transactions(address, limit=min(limit, 30))
+        return await public_rpc_client.get_wallet_transactions(address, limit=min(limit, 10))
 
 
 async def get_token_early_buyers(
@@ -31,7 +31,7 @@ async def get_token_early_buyers(
     except HeliusRateLimited:
         logger.warning(f"[fallback] Helius rate-limité -> RPC public (early_buyers {token_address[:8]}...)")
         return await public_rpc_client.get_token_early_buyers(
-            token_address, mint_timestamp, window_minutes, max_buyers, max_pages=5
+            token_address, mint_timestamp, window_minutes, max_buyers, max_pages=2
         )
 
 
@@ -43,5 +43,5 @@ async def get_wallet_transaction_history(address: str, max_pages: int = 5) -> tu
         return txs, False
     except HeliusRateLimited:
         logger.warning(f"[fallback] Helius rate-limité -> RPC public (history {address[:8]}...)")
-        txs = await public_rpc_client.get_wallet_transaction_history(address, max_pages=3, page_size=50)
+        txs = await public_rpc_client.get_wallet_transaction_history(address, max_pages=2, page_size=20)
         return txs, True
