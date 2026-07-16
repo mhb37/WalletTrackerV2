@@ -132,10 +132,10 @@ async def handle_command(command: str, chat_id: str) -> None:
             diagnostics = result.get("diagnostics", [])
             if diagnostics:
                 lines.append("\n<b>Détail par token:</b>")
-                for d in diagnostics[:15]:
+                for d in diagnostics[:30]:
                     lines.append(f"• {d}")
-                if len(diagnostics) > 15:
-                    lines.append(f"... et {len(diagnostics) - 15} de plus")
+                if len(diagnostics) > 30:
+                    lines.append(f"... et {len(diagnostics) - 30} de plus")
 
             await send_message("\n".join(lines), chat_id)
 
