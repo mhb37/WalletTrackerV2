@@ -11,29 +11,29 @@ class DexScreenerClient:
     def __init__(self):
         self.timeout = 20.0
 
-    async def get_boosted_tokens(self) -> list[dict]:
+    async def get_boosted_tokens(self) -> tuple[list[dict], int]:
         """Tokens récemment boostés/en avant sur DexScreener (bon proxy pour 'ça bouge')."""
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.get(config.DEXSCREENER_TOKEN_BOOSTS_URL)
             if resp.status_code != 200:
-                return []
-            return resp.json()
+                return [], resp.status_code
+            return resp.json(), resp.status_code
 
-    async def get_top_boosted_tokens(self) -> list[dict]:
+    async def get_top_boosted_tokens(self) -> tuple[list[dict], int]:
         """Deuxième flux DexScreener (différent de 'latest'): plus de variété de candidats."""
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.get(config.DEXSCREENER_TOKEN_BOOSTS_TOP_URL)
             if resp.status_code != 200:
-                return []
-            return resp.json()
+                return [], resp.status_code
+            return resp.json(), resp.status_code
 
-    async def get_token_profiles(self) -> list[dict]:
+    async def get_token_profiles(self) -> tuple[list[dict], int]:
         """Troisième flux DexScreener: tokens dont le profil vient d'être rempli (souvent tout jeunes)."""
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.get(config.DEXSCREENER_TOKEN_PROFILES_URL)
             if resp.status_code != 200:
-                return []
-            return resp.json()
+                return [], resp.status_code
+            return resp.json(), resp.status_code
 
     async def get_token_pairs(self, token_address: str) -> list[dict]:
         """Détails de marché (prix, liquidité, volume, mcap) pour un token Solana."""
@@ -56,14 +56,17 @@ class DexScreenerClient:
         Retourne (candidats, comptes_par_source) pour pouvoir diagnostiquer un
         cycle à 0 sans deviner (ex: un flux DexScreener en panne ce jour-là).
         """
-        latest_boosted = await self.get_boosted_tokens()
-        top_boosted = await self.get_top_boosted_tokens()
-        profiles = await self.get_token_profiles()
+        latest_boosted, status_latest = await self.get_boosted_tokens()
+        top_boosted, status_top = await self.get_top_boosted_tokens()
+        profiles, status_profiles = await self.get_token_profiles()
 
         source_counts = {
             "latest_boosted": len(latest_boosted),
+            "latest_boosted_http": status_latest,
             "top_boosted": len(top_boosted),
+            "top_boosted_http": status_top,
             "profiles": len(profiles),
+            "profiles_http": status_profiles,
         }
 
         # dédoublonne par adresse de token, en gardant l'ordre d'apparition
