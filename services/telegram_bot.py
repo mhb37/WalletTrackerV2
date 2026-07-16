@@ -2,6 +2,7 @@
 Bot Telegram minimal: envoie des alertes et répond à quelques commandes
 (/top, /wallet <address>, /watchlist). Polling simple, pas de webhook nécessaire.
 """
+import asyncio
 import httpx
 from sqlalchemy import desc
 from database import SessionLocal
@@ -68,7 +69,7 @@ async def notify_new_watchlist_wallet(wallet: Wallet):
 
 
 def _format_wallet_line(w: Wallet) -> str:
-    return f"• <code>{w.address[:6]}...{w.address[-4:]}</code> — score {w.score:.0f} | WR {w.win_rate:.0%} | ROI x{w.avg_roi_multiple:.2f}"
+    return f"• <code>{w.address}</code>\n  score {w.score:.0f} | WR {w.win_rate:.0%} | ROI x{w.avg_roi_multiple:.2f}"
 
 
 BUTTON_TO_COMMAND = {
@@ -293,6 +294,8 @@ async def poll_updates_once(offset: int | None = None) -> int | None:
         text = message.get("text", "")
         chat_id = str(message.get("chat", {}).get("id", ""))
         if text.startswith("/") or text.strip().lower() in BUTTON_TO_COMMAND:
-            await handle_command(text, chat_id)
+            # tâche de fond: une commande lente (scoring en mode dégradé, etc.)
+            # ne doit jamais empêcher de lire les messages/boutons suivants
+            asyncio.create_task(handle_command(text, chat_id))
 
     return new_offset
