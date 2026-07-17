@@ -10,12 +10,15 @@ Limite connue du tier gratuit Shyft: l'historique n'est conservé que ~3-4
 jours. Largement suffisant pour la découverte d'early buyers et le monitoring
 temps réel, plus limité pour juger l'ancienneté complète d'un wallet.
 """
+import logging
 import httpx
 from datetime import datetime, timezone
 from config import config
 from services.public_rpc_client import normalize_for_wallet, extract_token_buyers
 
-SHYFT_BASE_URL = "https://api.shyft.to/sol/v1/wallet/transaction_history"
+logger = logging.getLogger("wallet-scorer")
+
+SHYFT_BASE_URL = "https://api.shyft.to/sol/v1/transaction/history"
 
 
 async def _fetch_page(address: str, tx_num: int = 100, before_tx_signature: str | None = None) -> list[dict]:
@@ -24,8 +27,8 @@ async def _fetch_page(address: str, tx_num: int = 100, before_tx_signature: str 
 
     params = {
         "network": "mainnet-beta",
-        "wallet": address,
-        "tx_num": tx_num,
+        "account": address,
+        "tx_num": min(tx_num, 100),
         "enable_raw": "true",
     }
     if before_tx_signature:
@@ -35,12 +38,15 @@ async def _fetch_page(address: str, tx_num: int = 100, before_tx_signature: str 
     async with httpx.AsyncClient(timeout=20.0) as client:
         try:
             resp = await client.get(SHYFT_BASE_URL, params=params, headers=headers)
-        except httpx.RequestError:
+        except httpx.RequestError as e:
+            logger.warning(f"[shyft] erreur réseau: {e}")
             return []
         if resp.status_code != 200:
+            logger.warning(f"[shyft] HTTP {resp.status_code}: {resp.text[:200]}")
             return []
         data = resp.json()
         if not data.get("success"):
+            logger.warning(f"[shyft] success=false: {data.get('message')}")
             return []
         return data.get("result", []) or []
 
