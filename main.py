@@ -23,38 +23,43 @@ _background_tasks: list[asyncio.Task] = []
 
 async def discovery_loop():
     while True:
-        try:
-            result = await run_discovery_cycle()
-            logger.info(f"Discovery cycle: {result}")
-        except Exception as e:
-            logger.exception(f"Erreur discovery: {e}")
+        if config.AUTO_LOOPS_ENABLED:
+            try:
+                result = await run_discovery_cycle()
+                logger.info(f"Discovery cycle: {result}")
+            except Exception as e:
+                logger.exception(f"Erreur discovery: {e}")
         await asyncio.sleep(config.DISCOVERY_INTERVAL_MINUTES * 60)
 
 
 async def scoring_loop():
     while True:
-        try:
-            await asyncio.sleep(60)  # laisse la discovery tourner un peu en premier
-            from database import SessionLocal
-            db = SessionLocal()
-            already_watchlisted = {
-                w.address for w in db.query(Wallet).filter(Wallet.is_watchlisted == True).all()  # noqa: E712
-            }
-            db.close()
+        if config.AUTO_LOOPS_ENABLED:
+            try:
+                await asyncio.sleep(60)  # laisse la discovery tourner un peu en premier
+                from database import SessionLocal
+                db = SessionLocal()
+                already_watchlisted = {
+                    w.address for w in db.query(Wallet).filter(Wallet.is_watchlisted == True).all()  # noqa: E712
+                }
+                db.close()
 
-            results = await run_scoring_cycle()
-            logger.info(f"Scoring cycle: {len(results)} wallets traités")
+                results = await run_scoring_cycle()
+                if isinstance(results, dict) and results.get("skipped"):
+                    logger.info("Scoring auto: cycle déjà en cours, skip")
+                else:
+                    logger.info(f"Scoring cycle: {len(results)} wallets traités")
 
-            db = SessionLocal()
-            newly_watchlisted = db.query(Wallet).filter(
-                Wallet.is_watchlisted == True,  # noqa: E712
-                ~Wallet.address.in_(already_watchlisted) if already_watchlisted else True,
-            ).all()
-            for w in newly_watchlisted:
-                await notify_new_watchlist_wallet(w)
-            db.close()
-        except Exception as e:
-            logger.exception(f"Erreur scoring: {e}")
+                    db = SessionLocal()
+                    newly_watchlisted = db.query(Wallet).filter(
+                        Wallet.is_watchlisted == True,  # noqa: E712
+                        ~Wallet.address.in_(already_watchlisted) if already_watchlisted else True,
+                    ).all()
+                    for w in newly_watchlisted:
+                        await notify_new_watchlist_wallet(w)
+                    db.close()
+            except Exception as e:
+                logger.exception(f"Erreur scoring: {e}")
         await asyncio.sleep(config.RESCORE_INTERVAL_MINUTES * 60)
 
 
@@ -70,22 +75,24 @@ async def telegram_polling_loop():
 
 async def monitor_loop():
     while True:
-        try:
-            result = await run_monitor_cycle()
-            if result["alerts_sent"] > 0:
-                logger.info(f"Monitor cycle: {result}")
-        except Exception as e:
-            logger.exception(f"Erreur monitor: {e}")
+        if config.AUTO_LOOPS_ENABLED:
+            try:
+                result = await run_monitor_cycle()
+                if result["alerts_sent"] > 0:
+                    logger.info(f"Monitor cycle: {result}")
+            except Exception as e:
+                logger.exception(f"Erreur monitor: {e}")
         await asyncio.sleep(config.MONITOR_INTERVAL_SECONDS)
 
 
 async def paper_trading_loop():
     while True:
-        try:
-            await process_pending_signals()
-            await manage_open_positions()
-        except Exception as e:
-            logger.exception(f"Erreur paper trading: {e}")
+        if config.AUTO_LOOPS_ENABLED:
+            try:
+                await process_pending_signals()
+                await manage_open_positions()
+            except Exception as e:
+                logger.exception(f"Erreur paper trading: {e}")
         await asyncio.sleep(config.MONITOR_INTERVAL_SECONDS)
 
 
