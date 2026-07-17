@@ -208,7 +208,18 @@ async def score_wallet(wallet_address: str, db: Session) -> dict | None:
     return {"address": wallet_address, "passed": passed, "score": wallet.score, "reasons": reasons}
 
 
+_scoring_in_progress = False
+
+
 async def run_scoring_cycle():
+    global _scoring_in_progress
+    if _scoring_in_progress:
+        # Un cycle tourne déjà (auto ou manuel) -> on ne lance pas de doublon,
+        # sinon plusieurs cycles se marchent dessus indéfiniment sans jamais
+        # vraiment se terminer aux yeux de l'utilisateur.
+        return {"skipped": True, "reason": "deja_en_cours"}
+
+    _scoring_in_progress = True
     db: Session = SessionLocal()
     try:
         wallets = db.query(Wallet).all()
@@ -221,3 +232,4 @@ async def run_scoring_cycle():
         return results
     finally:
         db.close()
+        _scoring_in_progress = False
