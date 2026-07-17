@@ -11,6 +11,9 @@ class Config:
     # --- Helius ---
     HELIUS_API_KEY = os.getenv("HELIUS_API_KEY", "")
     HELIUS_RPC_URL = f"https://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
+
+    # --- Shyft (secours rapide, avant le RPC public plus lent) ---
+    SHYFT_API_KEY = os.getenv("SHYFT_API_KEY", "")
     HELIUS_TX_URL = "https://api.helius.xyz/v0/addresses/{address}/transactions"
 
     # --- Telegram ---
@@ -84,6 +87,11 @@ class Config:
     DISCOVERY_INTERVAL_MINUTES = int(os.getenv("DISCOVERY_INTERVAL_MINUTES", "30"))
     RESCORE_INTERVAL_MINUTES = int(os.getenv("RESCORE_INTERVAL_MINUTES", "15"))
     MONITOR_INTERVAL_SECONDS = int(os.getenv("MONITOR_INTERVAL_SECONDS", "45"))
+
+    # Coupe-circuit: si le quota API (Helius/DexScreener) est épuisé, on peut
+    # désactiver les boucles automatiques sans arrêter le bot. Les commandes
+    # Telegram manuelles (/discovery, /scoring, /monitor) restent utilisables.
+    AUTO_LOOPS_ENABLED = os.getenv("AUTO_LOOPS_ENABLED", "true").lower() == "true"
 
 
 config = Config()
