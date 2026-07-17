@@ -141,9 +141,18 @@ async def handle_command(command: str, chat_id: str) -> None:
             await send_message("\n".join(lines), chat_id)
 
         elif normalized.startswith("/scoring"):
-            await send_message("📊 Scoring en cours...", chat_id)
             from services.scoring import run_scoring_cycle
             results = await run_scoring_cycle()
+
+            if isinstance(results, dict) and results.get("skipped"):
+                await send_message(
+                    "⏳ Un cycle de scoring est déjà en cours (auto ou manuel). "
+                    "Patiente qu'il se termine avant d'en relancer un.",
+                    chat_id,
+                )
+                return
+
+            await send_message("📊 Scoring en cours...", chat_id)
             passed = [r for r in results if r.get("passed")]
 
             tally = {}
