@@ -26,7 +26,10 @@ async def discovery_loop():
         if config.AUTO_LOOPS_ENABLED:
             try:
                 result = await run_discovery_cycle()
-                logger.info(f"Discovery cycle: {result}")
+                if result.get("skipped"):
+                    logger.info("Discovery auto: cycle déjà en cours, skip")
+                else:
+                    logger.info(f"Discovery cycle: {result}")
             except Exception as e:
                 logger.exception(f"Erreur discovery: {e}")
         await asyncio.sleep(config.DISCOVERY_INTERVAL_MINUTES * 60)
