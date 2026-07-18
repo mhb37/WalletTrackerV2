@@ -135,6 +135,8 @@ async def score_wallet(wallet_address: str, db: Session) -> dict | None:
         wallet_address, max_pages=config.MAX_HISTORY_PAGES_FOR_SCORING
     )
     if not txs:
+        wallet.last_scored_at = datetime.now(timezone.utc)
+        db.commit()
         return None
 
     if used_fallback and len(txs) < config.MIN_TOTAL_TRADES:
@@ -142,6 +144,8 @@ async def score_wallet(wallet_address: str, db: Session) -> dict | None:
         # équitablement ce wallet -> on NE TOUCHE PAS à son score existant.
         # Mieux vaut garder le dernier verdict fiable que d'écraser un bon
         # wallet à tort à cause d'une infrastructure de secours plus limitée.
+        wallet.last_scored_at = datetime.now(timezone.utc)
+        db.commit()
         return {
             "address": wallet_address,
             "passed": wallet.passed_hard_filters,
@@ -165,6 +169,7 @@ async def score_wallet(wallet_address: str, db: Session) -> dict | None:
         wallet.passed_hard_filters = False
         wallet.rejection_reason = "aucune_position_cloturee (pas encore de vente détectée)"
         wallet.score = 0
+        wallet.last_scored_at = datetime.now(timezone.utc)
         db.commit()
         return {"address": wallet_address, "passed": False, "reasons": ["aucune_position_cloturee"]}
 
@@ -204,6 +209,7 @@ async def score_wallet(wallet_address: str, db: Session) -> dict | None:
         wallet.score = 0
         wallet.is_watchlisted = False
 
+    wallet.last_scored_at = datetime.now(timezone.utc)
     db.commit()
     return {"address": wallet_address, "passed": passed, "score": wallet.score, "reasons": reasons}
 
@@ -222,12 +228,29 @@ async def run_scoring_cycle():
     _scoring_in_progress = True
     db: Session = SessionLocal()
     try:
-        wallets = db.query(Wallet).all()
+        total_wallets = db.query(Wallet).count()
+        wallets = (
+            db.query(Wallet)
+            .order_by(Wallet.last_scored_at.asc().nullsfirst())
+            .limit(config.MAX_WALLETS_PER_SCORING_CYCLE)
+            .all()
+        )
+
+        from services.telegram_bot import send_message
+
+        if total_wallets > len(wallets):
+            await send_message(
+                f"📊 Scoring: {len(wallets)}/{total_wallets} wallets ce cycle "
+                f"(les autres seront traités aux prochains cycles)."
+            )
+
         results = []
-        for w in wallets:
+        for i, w in enumerate(wallets, start=1):
             result = await score_wallet(w.address, db)
             if result:
                 results.append(result)
+            if i % 10 == 0 and i < len(wallets):
+                await send_message(f"📊 Scoring en cours... {i}/{len(wallets)} wallets traités")
             await asyncio.sleep(0.3)  # ménage le rate limit Helius entre chaque wallet
         return results
     finally:
