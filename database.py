@@ -37,6 +37,7 @@ def _run_light_migrations():
     statements = [
         "ALTER TABLE wallets ADD COLUMN IF NOT EXISTS rejection_reason VARCHAR",
         "ALTER TABLE wallets ADD COLUMN IF NOT EXISTS last_seen_signature VARCHAR",
+        "ALTER TABLE wallets ADD COLUMN IF NOT EXISTS last_scored_at TIMESTAMP",
         "ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS signal_created_at TIMESTAMP",
         "ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS entry_delay_seconds FLOAT",
         "ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS retracement_pct_at_entry FLOAT",
