@@ -45,6 +45,11 @@ class Config:
     # complet d'un wallet lors du scoring (âge réel + PnL). Plus haut = plus précis
     # mais plus d'appels API par wallet.
     MAX_HISTORY_PAGES_FOR_SCORING = int(os.getenv("MAX_HISTORY_PAGES_FOR_SCORING", "5"))
+    # Limite le nombre de wallets traités par cycle, pour que ça reste rapide
+    # même avec beaucoup de wallets accumulés. Les moins récemment scorés
+    # passent en priorité -> tout le monde finit par être revu, juste étalé
+    # sur plusieurs cycles au lieu d'un seul cycle interminable.
+    MAX_WALLETS_PER_SCORING_CYCLE = int(os.getenv("MAX_WALLETS_PER_SCORING_CYCLE", "15"))
 
     # --- Scoring: poids (doivent sommer à 1.0) ---
     WEIGHT_WIN_RATE = 0.30
