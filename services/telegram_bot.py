@@ -110,9 +110,18 @@ async def handle_command(command: str, chat_id: str) -> None:
             await send_message(HELP_TEXT, chat_id, reply_markup=main_keyboard())
 
         elif normalized.startswith("/discovery"):
-            await send_message("🔍 Discovery en cours...", chat_id)
             from services.discovery import run_discovery_cycle
             result = await run_discovery_cycle()
+
+            if result.get("skipped"):
+                await send_message(
+                    "⏳ Un cycle de discovery est déjà en cours (auto ou manuel). "
+                    "Patiente qu'il se termine avant d'en relancer un.",
+                    chat_id,
+                )
+                return
+
+            await send_message("🔍 Discovery en cours...", chat_id)
 
             lines = [
                 f"✅ Discovery terminée",
