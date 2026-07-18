@@ -5,6 +5,7 @@ et les enregistre comme wallets candidats à scorer.
 import asyncio
 import logging
 from datetime import datetime, timezone
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from database import SessionLocal
 from models import Wallet, Token, WalletTransaction
@@ -14,8 +15,18 @@ from config import config
 
 logger = logging.getLogger("wallet-scorer")
 
+_discovery_in_progress = False
+
 
 async def run_discovery_cycle():
+    global _discovery_in_progress
+    if _discovery_in_progress:
+        # Un cycle tourne déjà (auto ou manuel) -> on ne lance pas de doublon,
+        # sinon deux cycles peuvent tenter d'insérer les mêmes transactions en
+        # même temps et se faire rejeter par la contrainte unique en base.
+        return {"skipped": True, "reason": "deja_en_cours"}
+
+    _discovery_in_progress = True
     db: Session = SessionLocal()
     try:
         pumped_tokens, source_counts = await dexscreener_client.find_pumped_solana_tokens(
@@ -78,20 +89,21 @@ async def run_discovery_cycle():
             )
 
             total = len(early_buyers) or 1
+            added_this_token = 0
             for idx, buyer in enumerate(early_buyers):
                 wallet_address = buyer["wallet"]
-
-                wallet = db.query(Wallet).filter(Wallet.address == wallet_address).first()
-                if not wallet:
-                    wallet = Wallet(address=wallet_address, first_seen=datetime.now(timezone.utc))
-                    db.add(wallet)
-                    new_wallets_found += 1
 
                 exists_tx = db.query(WalletTransaction).filter(
                     WalletTransaction.tx_signature == buyer["tx_signature"]
                 ).first()
                 if exists_tx:
                     continue
+
+                wallet = db.query(Wallet).filter(Wallet.address == wallet_address).first()
+                if not wallet:
+                    wallet = Wallet(address=wallet_address, first_seen=datetime.now(timezone.utc))
+                    db.add(wallet)
+                    new_wallets_found += 1
 
                 tx = WalletTransaction(
                     wallet_address=wallet_address,
@@ -103,9 +115,19 @@ async def run_discovery_cycle():
                     timestamp=buyer["timestamp"],
                 )
                 db.add(tx)
+                added_this_token += 1
 
             token.used_for_discovery = True
-            db.commit()
+
+            try:
+                db.commit()
+            except IntegrityError as e:
+                # Une transaction déjà présente en base (ex: cycle concurrent) ->
+                # on annule juste ce lot et on continue, plutôt que de tout
+                # faire planter. Le token sera reconsidéré au prochain cycle.
+                db.rollback()
+                logger.warning(f"[discovery] {token_address[:8]}: doublon détecté à l'insertion, lot ignoré ({e})")
+                new_wallets_found -= added_this_token if added_this_token > 0 else 0
 
             await asyncio.sleep(0.5)  # ménage le rate limit Helius entre chaque token
 
@@ -118,3 +140,4 @@ async def run_discovery_cycle():
 
     finally:
         db.close()
+        _discovery_in_progress = False
