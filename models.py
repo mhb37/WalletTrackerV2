@@ -33,6 +33,7 @@ class Wallet(Base):
     rejection_reason = Column(String, nullable=True)
     is_watchlisted = Column(Boolean, default=False)
     last_seen_signature = Column(String, nullable=True)  # curseur pour le tracking temps réel
+    last_scored_at = Column(DateTime, nullable=True)  # pour prioriser les wallets pas encore revus
 
     transactions = relationship("WalletTransaction", back_populates="wallet")
 
