@@ -3,11 +3,14 @@ Bot Telegram minimal: envoie des alertes et répond à quelques commandes
 (/top, /wallet <address>, /watchlist). Polling simple, pas de webhook nécessaire.
 """
 import asyncio
+import logging
 import httpx
 from sqlalchemy import desc
 from database import SessionLocal
 from models import Wallet
 from config import config
+
+logger = logging.getLogger("wallet-scorer")
 
 API_BASE = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}"
 
@@ -98,6 +101,21 @@ HELP_TEXT = (
     "watchlisté fait un nouvel achat, un signal est mis en observation, et une "
     "position paper s'ouvre seulement si un bon point d'entrée se présente."
 )
+
+
+async def _handle_command_safe(command: str, chat_id: str) -> None:
+    """Enveloppe handle_command: une commande tourne en tâche de fond (fire-and-
+    forget) pour ne pas bloquer la lecture des messages suivants. Sans ce
+    wrapper, la moindre erreur à l'intérieur disparaît silencieusement, sans
+    aucun message ni log clair -> on capture tout et on te le remonte."""
+    try:
+        await handle_command(command, chat_id)
+    except Exception as e:
+        logger.exception(f"[handle_command] erreur sur '{command}': {e}")
+        try:
+            await send_message(f"❌ Erreur pendant la commande: {e}", chat_id)
+        except Exception:
+            pass
 
 
 async def handle_command(command: str, chat_id: str) -> None:
@@ -314,6 +332,6 @@ async def poll_updates_once(offset: int | None = None) -> int | None:
         if text.startswith("/") or text.strip().lower() in BUTTON_TO_COMMAND:
             # tâche de fond: une commande lente (scoring en mode dégradé, etc.)
             # ne doit jamais empêcher de lire les messages/boutons suivants
-            asyncio.create_task(handle_command(text, chat_id))
+            asyncio.create_task(_handle_command_safe(text, chat_id))
 
     return new_offset
