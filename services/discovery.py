@@ -89,7 +89,7 @@ async def run_discovery_cycle():
             )
 
             total = len(early_buyers) or 1
-            added_this_token = 0
+            new_wallets_this_token = 0
             for idx, buyer in enumerate(early_buyers):
                 wallet_address = buyer["wallet"]
 
@@ -104,6 +104,7 @@ async def run_discovery_cycle():
                     wallet = Wallet(address=wallet_address, first_seen=datetime.now(timezone.utc))
                     db.add(wallet)
                     new_wallets_found += 1
+                    new_wallets_this_token += 1
 
                 tx = WalletTransaction(
                     wallet_address=wallet_address,
@@ -115,7 +116,6 @@ async def run_discovery_cycle():
                     timestamp=buyer["timestamp"],
                 )
                 db.add(tx)
-                added_this_token += 1
 
             token.used_for_discovery = True
 
@@ -127,7 +127,7 @@ async def run_discovery_cycle():
                 # faire planter. Le token sera reconsidéré au prochain cycle.
                 db.rollback()
                 logger.warning(f"[discovery] {token_address[:8]}: doublon détecté à l'insertion, lot ignoré ({e})")
-                new_wallets_found -= added_this_token if added_this_token > 0 else 0
+                new_wallets_found -= new_wallets_this_token
 
             await asyncio.sleep(0.5)  # ménage le rate limit Helius entre chaque token
 
