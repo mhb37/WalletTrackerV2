@@ -2,9 +2,10 @@
 Calcule les stats de performance d'un wallet à partir de son historique on-chain,
 applique des filtres durs, puis calcule un score 0-100.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import asyncio
 from collections import defaultdict
+from sqlalchemy import case
 from sqlalchemy.orm import Session
 from database import SessionLocal
 from models import Wallet
@@ -229,9 +230,18 @@ async def run_scoring_cycle():
     db: Session = SessionLocal()
     try:
         total_wallets = db.query(Wallet).count()
+
+        active_cutoff = datetime.now(timezone.utc) - timedelta(days=config.MAX_INACTIVE_DAYS)
+        priority = case(
+            (Wallet.is_watchlisted == True, 0),           # noqa: E712 - toujours à jour
+            (Wallet.passed_hard_filters == True, 1),       # déjà qualifiés, à surveiller
+            (Wallet.last_active_at >= active_cutoff, 2),    # actifs récemment, pas encore qualifiés
+            else_=3,                                        # le reste (inactifs / jamais qualifiés)
+        )
+
         wallets = (
             db.query(Wallet)
-            .order_by(Wallet.last_scored_at.asc().nullsfirst())
+            .order_by(priority, Wallet.last_scored_at.asc().nullsfirst())
             .limit(config.MAX_WALLETS_PER_SCORING_CYCLE)
             .all()
         )
@@ -241,7 +251,7 @@ async def run_scoring_cycle():
         if total_wallets > len(wallets):
             await send_message(
                 f"📊 Scoring: {len(wallets)}/{total_wallets} wallets ce cycle "
-                f"(les autres seront traités aux prochains cycles)."
+                f"(watchlist et wallets actifs en priorité)."
             )
 
         results = []
