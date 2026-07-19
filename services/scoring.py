@@ -288,6 +288,14 @@ async def run_scoring_cycle():
                 logger.warning(f"[scoring] timeout sur {w.address[:8]}..., on passe au suivant")
                 db.rollback()  # nettoie une éventuelle écriture en cours interrompue
                 result = None
+            except Exception as e:
+                # N'importe quelle autre erreur (bug, donnée malformée, etc.) ->
+                # on log, on nettoie, et on continue sur le wallet suivant.
+                # Sans ce filet, UNE seule erreur ici faisait planter tout le
+                # cycle en silence (tâche de fond = pas de crash visible).
+                logger.exception(f"[scoring] erreur sur {w.address[:8]}...: {e}")
+                db.rollback()
+                result = None
 
             if result:
                 results.append(result)
