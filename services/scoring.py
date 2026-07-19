@@ -4,6 +4,7 @@ applique des filtres durs, puis calcule un score 0-100.
 """
 from datetime import datetime, timezone, timedelta
 import asyncio
+import logging
 from collections import defaultdict
 from sqlalchemy import case
 from sqlalchemy.orm import Session
@@ -12,6 +13,8 @@ from models import Wallet
 from services import data_provider
 from services.rug_detector import compute_rug_stats
 from config import config
+
+logger = logging.getLogger("wallet-scorer")
 
 
 LAMPORTS_PER_SOL = 1_000_000_000
@@ -270,8 +273,22 @@ async def run_scoring_cycle():
             )
 
         results = []
+        cycle_start = datetime.now(timezone.utc)
+        max_cycle_seconds = 8 * 60  # filet de sécurité: le cycle s'arrête et rapporte, même incomplet
+
         for i, w in enumerate(wallets, start=1):
-            result = await score_wallet(w.address, db)
+            elapsed = (datetime.now(timezone.utc) - cycle_start).total_seconds()
+            if elapsed > max_cycle_seconds:
+                logger.warning(f"[scoring] durée max atteinte, arrêt anticipé à {i-1}/{len(wallets)} wallets")
+                break
+
+            try:
+                result = await asyncio.wait_for(score_wallet(w.address, db), timeout=90)
+            except asyncio.TimeoutError:
+                logger.warning(f"[scoring] timeout sur {w.address[:8]}..., on passe au suivant")
+                db.rollback()  # nettoie une éventuelle écriture en cours interrompue
+                result = None
+
             if result:
                 results.append(result)
             if i % 10 == 0 and i < len(wallets):
