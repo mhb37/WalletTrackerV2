@@ -141,10 +141,8 @@ async def score_wallet(wallet_address: str, db: Session) -> dict | None:
         return None
 
     if used_fallback and len(txs) < config.MIN_TOTAL_TRADES:
-        # Le RPC public de secours n'a pas remonté assez de données pour juger
+        # Le mode secours n'a pas remonté assez de données pour juger
         # équitablement ce wallet -> on NE TOUCHE PAS à son score existant.
-        # Mieux vaut garder le dernier verdict fiable que d'écraser un bon
-        # wallet à tort à cause d'une infrastructure de secours plus limitée.
         wallet.last_scored_at = datetime.now(timezone.utc)
         db.commit()
         return {
@@ -180,6 +178,23 @@ async def score_wallet(wallet_address: str, db: Session) -> dict | None:
         avg_entry_percentile = sum(entries) / len(entries)
 
     passed, reasons = _passes_hard_filters(wallet, stats, wallet_age_days)
+
+    if used_fallback and wallet.passed_hard_filters and not passed:
+        # Ce wallet était déjà validé sur une vue complète (Helius), mais les
+        # données de secours (Shyft: fenêtre de 3-4 jours seulement, ou RPC
+        # public: échantillon limité) donnent un instantané partiel et biaisé
+        # dans le temps qui semble moins bon. Un mauvais passage récent ne
+        # veut pas dire que le wallet est devenu mauvais -> on garde le
+        # dernier verdict fiable, on ne dégrade que sur une vraie vue complète.
+        wallet.last_scored_at = datetime.now(timezone.utc)
+        db.commit()
+        return {
+            "address": wallet_address,
+            "passed": wallet.passed_hard_filters,
+            "score": wallet.score,
+            "reasons": ["verdict_protege_fallback_partiel"],
+            "skipped": True,
+        }
 
     wallet.total_trades = stats["total_trades"]
     wallet.win_count = stats["win_count"]
